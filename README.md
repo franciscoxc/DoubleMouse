@@ -39,9 +39,9 @@ While running from Terminal with `swift run`, macOS grants Accessibility permiss
 
 1. Run `swift run DoubleMouse`.
 2. Look for `DoubleMouse` in the macOS menu bar.
-3. Choose the normal device under `Mouse del sistema`.
-4. Choose the device that should drive the blue overlay under `Mouse flecha azul`.
-5. If needed, use `Elegir flecha azul con el proximo movimiento` and then move the secondary mouse.
+3. Choose the normal device under `System Mouse`.
+4. Choose the device that should drive the blue overlay under `Blue Pointer Mouse`.
+5. If needed, use `Set Blue Pointer From Next Movement` and then move the secondary mouse.
 6. Move both devices to confirm the system cursor and blue pointer remain independent.
 
 The built-in MacBook trackpad may appear as a touchpad device on some Macs and macOS versions. If it does not appear, use the two external mouse setup first; trackpad support will need model-specific testing.

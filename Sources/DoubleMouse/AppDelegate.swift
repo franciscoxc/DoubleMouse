@@ -39,14 +39,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(title)
         menu.addItem(.separator())
 
-        menu.addItem(deviceSelectionMenu(title: "Mouse del sistema", selectedID: hidMonitor.selectedPrimaryDeviceID, action: #selector(selectPrimaryDevice(_:))))
-        menu.addItem(deviceSelectionMenu(title: "Mouse flecha azul", selectedID: hidMonitor.selectedSecondaryDeviceID, action: #selector(selectSecondaryDevice(_:))))
+        menu.addItem(deviceSelectionMenu(title: "System Mouse", selectedID: hidMonitor.selectedPrimaryDeviceID, action: #selector(selectPrimaryDevice(_:))))
+        menu.addItem(deviceSelectionMenu(title: "Blue Pointer Mouse", selectedID: hidMonitor.selectedSecondaryDeviceID, action: #selector(selectSecondaryDevice(_:))))
 
-        let assignSystem = NSMenuItem(title: "Elegir mouse del sistema con el proximo movimiento", action: #selector(assignPrimaryFromNextMovement), keyEquivalent: "")
+        let assignSystem = NSMenuItem(title: "Set System Mouse From Next Movement", action: #selector(assignPrimaryFromNextMovement), keyEquivalent: "")
         assignSystem.target = self
         menu.addItem(assignSystem)
 
-        let assignBlue = NSMenuItem(title: "Elegir flecha azul con el proximo movimiento", action: #selector(assignSecondaryFromNextMovement), keyEquivalent: "")
+        let assignBlue = NSMenuItem(title: "Set Blue Pointer From Next Movement", action: #selector(assignSecondaryFromNextMovement), keyEquivalent: "")
         assignBlue.target = self
         menu.addItem(assignBlue)
 
@@ -56,26 +56,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(prompt)
         }
 
-        let invertY = NSMenuItem(title: "Invertir eje Y de la flecha azul", action: #selector(toggleInvertBluePointerYAxis), keyEquivalent: "")
+        let invertY = NSMenuItem(title: "Invert Blue Pointer Y Axis", action: #selector(toggleInvertBluePointerYAxis), keyEquivalent: "")
         invertY.target = self
         invertY.state = invertBluePointerYAxis ? .on : .off
         menu.addItem(invertY)
 
         menu.addItem(.separator())
 
-        let primary = hidMonitor.primaryDeviceName ?? "sin elegir"
-        let secondary = hidMonitor.secondaryDeviceName ?? "sin elegir"
-        let summary = NSMenuItem(title: "Usando: \(primary) / \(secondary)", action: nil, keyEquivalent: "")
+        let primary = hidMonitor.primaryDeviceName ?? "not selected"
+        let secondary = hidMonitor.secondaryDeviceName ?? "not selected"
+        let summary = NSMenuItem(title: "Using: \(primary) / \(secondary)", action: nil, keyEquivalent: "")
         summary.isEnabled = false
         menu.addItem(summary)
 
-        let permission = NSMenuItem(title: "Pedir permiso de accesibilidad", action: #selector(requestAccessibilityPermission), keyEquivalent: "")
+        let permission = NSMenuItem(title: "Request Accessibility Permission", action: #selector(requestAccessibilityPermission), keyEquivalent: "")
         permission.target = self
         menu.addItem(permission)
 
         menu.addItem(.separator())
 
-        let quit = NSMenuItem(title: "Salir de DoubleMouse", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit DoubleMouse", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
 
         statusItem.menu = menu
@@ -86,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let submenu = NSMenu()
 
         if hidMonitor.allDevices.isEmpty {
-            let empty = NSMenuItem(title: "Mueve un mouse para detectar dispositivos", action: nil, keyEquivalent: "")
+            let empty = NSMenuItem(title: "Move a mouse to detect devices", action: nil, keyEquivalent: "")
             empty.isEnabled = false
             submenu.addItem(empty)
         } else {
@@ -151,10 +151,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         let alert = NSAlert()
-        alert.messageText = "DoubleMouse necesita permiso de accesibilidad"
-        alert.informativeText = "DoubleMouse necesita este permiso para presionar controles y emitir clics desde la flecha azul. Mientras se ejecuta con swift run, macOS le da el permiso a Terminal; empaquetada como app lo pedira como DoubleMouse."
-        alert.addButton(withTitle: "Abrir ajustes")
-        alert.addButton(withTitle: "Despues")
+        alert.messageText = "DoubleMouse Needs Accessibility Permission"
+        alert.informativeText = "DoubleMouse needs this permission to press controls and emit clicks from the blue pointer. While running with swift run, macOS grants this permission to Terminal; packaged as an app, it will request permission as DoubleMouse."
+        alert.addButton(withTitle: "Open Settings")
+        alert.addButton(withTitle: "Later")
 
         if alert.runModal() == .alertFirstButtonReturn {
             requestAccessibilityIfNeeded(prompt: true)
