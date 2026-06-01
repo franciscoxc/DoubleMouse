@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Improved README technical and usability notes.
+- Documented that blue-pointer drag-and-drop is not supported yet.
+- Added GitHub issue templates.
+- Kept the stable one-blue-pointer architecture after testing a two-virtual-pointer experiment.
+
 ## 1.0.3 - 2026-05-31
 
 - Removed the release-delay setting.

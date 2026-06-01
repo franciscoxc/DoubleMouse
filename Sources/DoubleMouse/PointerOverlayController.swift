@@ -58,22 +58,16 @@ final class PointerView: NSView {
     }
 
     private var pulseUntil: Date?
+    private let cursorImage = NSCursor.arrow.image
+    private lazy var blueCursorImage = tintedCursorImage(color: .systemBlue)
 
     override var isFlipped: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        drawPointer(at: pointerPosition, color: .systemBlue)
-
-        if let pulseUntil, pulseUntil > Date() {
-            let remaining = pulseUntil.timeIntervalSinceNow
-            let progress = 1.0 - min(max(remaining / 0.35, 0), 1)
-            drawPulse(at: pointerPosition, color: .systemBlue, progress: progress)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
-                self?.needsDisplay = true
-            }
-        }
+        drawPointerImage(blueCursorImage, at: pointerPosition, mirrored: true)
+        drawPulseIfNeeded(at: pointerPosition, color: .systemBlue, until: pulseUntil)
     }
 
     func pulse() {
@@ -81,24 +75,58 @@ final class PointerView: NSView {
         needsDisplay = true
     }
 
-    private func drawPointer(at point: CGPoint, color: NSColor) {
-        let path = NSBezierPath()
-        path.move(to: point)
-        path.line(to: CGPoint(x: point.x - 7, y: point.y - 36))
-        path.line(to: CGPoint(x: point.x - 15, y: point.y - 25))
-        path.line(to: CGPoint(x: point.x - 22, y: point.y - 43))
-        path.line(to: CGPoint(x: point.x - 31, y: point.y - 39))
-        path.line(to: CGPoint(x: point.x - 24, y: point.y - 22))
-        path.line(to: CGPoint(x: point.x - 38, y: point.y - 23))
-        path.close()
+    private func drawPulseIfNeeded(at point: CGPoint, color: NSColor, until pulseUntil: Date?) {
+        guard let pulseUntil, pulseUntil > Date() else {
+            return
+        }
 
-        NSColor.white.withAlphaComponent(0.95).setStroke()
-        path.lineJoinStyle = .round
-        path.lineWidth = 6
-        path.stroke()
+        let remaining = pulseUntil.timeIntervalSinceNow
+        let progress = 1.0 - min(max(remaining / 0.35, 0), 1)
+        drawPulse(at: point, color: color, progress: progress)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
+            self?.needsDisplay = true
+        }
+    }
 
-        color.setFill()
-        path.fill()
+    private func drawPointerImage(_ image: NSImage, at point: CGPoint, mirrored: Bool) {
+        let size = image.size
+        let hotSpot = NSCursor.arrow.hotSpot
+        let hotSpotX = mirrored ? size.width - hotSpot.x : hotSpot.x
+        let rect = NSRect(
+            x: point.x - hotSpotX,
+            y: point.y - size.height + hotSpot.y,
+            width: size.width,
+            height: size.height
+        )
+
+        guard mirrored else {
+            image.draw(in: rect)
+            return
+        }
+
+        guard let context = NSGraphicsContext.current else {
+            image.draw(in: rect)
+            return
+        }
+
+        context.saveGraphicsState()
+        let transform = NSAffineTransform()
+        transform.translateX(by: rect.maxX, yBy: rect.minY)
+        transform.scaleX(by: -1, yBy: 1)
+        transform.concat()
+        image.draw(in: NSRect(origin: .zero, size: size))
+        context.restoreGraphicsState()
+    }
+
+    private func tintedCursorImage(color: NSColor) -> NSImage {
+        let image = NSImage(size: cursorImage.size)
+        image.lockFocus()
+        let rect = NSRect(origin: .zero, size: cursorImage.size)
+        cursorImage.draw(in: rect)
+        color.withAlphaComponent(0.85).setFill()
+        rect.fill(using: .sourceAtop)
+        image.unlockFocus()
+        return image
     }
 
     private func drawPulse(at point: CGPoint, color: NSColor, progress: Double) {
