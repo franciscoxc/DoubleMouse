@@ -43,11 +43,12 @@ final class ClickPerformer {
             return
         }
 
-        let original = returnPoint ?? NSEvent.mouseLocation
-        moveSystemCursor(to: point)
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
-        moveSystemCursor(to: original)
+
+        if let returnPoint {
+            moveSystemCursor(to: returnPoint)
+        }
     }
 
     private func quartzPoint(fromAppKitPoint point: CGPoint) -> CGPoint {
