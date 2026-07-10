@@ -4,16 +4,16 @@
   <img src="Assets/DoubleMouse.png" alt="DoubleMouse icon" width="180">
 </p>
 
-Ever wondered how to be faster on your Mac? What if, instead of one little arrow, you had two?
+Ever wondered how to be faster on your Mac? What if you had two physical mice, each with its own pointer?
 
-**DoubleMouse** is an open-source macOS menu bar app that gives a second physical mouse its own blue pointer. Both pointers move simultaneously, and each can click, scroll, and drag. It is also handy in classrooms and support sessions, where teacher and student can each keep a hand on the computer without negotiating custody of the cursor.
+**DoubleMouse** is an open-source macOS menu bar app for two pointing devices: two physical mice, or your MacBook's built-in trackpad plus one external mouse. Both pointers move simultaneously, and each can click, scroll, and drag. It is also handy in classrooms and support sessions, where teacher and student can each keep a hand on the computer without negotiating custody of the cursor.
 
 ## Download
 
-- [Download DoubleMouse 1.1.0 for macOS from GitHub](https://github.com/franciscoxc/DoubleMouse/releases/download/v1.1.0/DoubleMouse-1.1.0.dmg)
+- [Download DoubleMouse 1.1.1 for macOS from GitHub](https://github.com/franciscoxc/DoubleMouse/releases/download/v1.1.1/DoubleMouse-1.1.1.dmg)
 - [Download mirror and project page](https://apps.franxc.com/doublemouse/)
 
-The downloadable build supports Apple Silicon and Intel Macs running macOS 13 or later.
+The app requires two pointing devices: two physical mice, or the built-in MacBook trackpad plus one external mouse. The downloadable build supports Apple Silicon and Intel Macs running macOS 13 or later.
 
 ## Install
 
@@ -22,7 +22,7 @@ The downloadable build supports Apple Silicon and Intel Macs running macOS 13 or
 3. If the blue pointer does not react, also enable DoubleMouse under System Settings > Privacy & Security > Input Monitoring.
 4. Use `Set Blue Pointer From Next Movement` from the menu bar when you need to assign a different device.
 
-Version 1.1.0 is ad-hoc signed but not notarized. macOS may require you to approve the first launch under System Settings > Privacy & Security.
+Version 1.1.1 is ad-hoc signed but not notarized. macOS may require you to approve the first launch under System Settings > Privacy & Security.
 
 ## Features
 
@@ -59,7 +59,7 @@ When running from Terminal, macOS assigns the relevant privacy permissions to Te
 ## Build The DMG
 
 ```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer scripts/package-release.sh 1.1.0
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer scripts/package-release.sh 1.1.1
 ```
 
 The script uses only native macOS tools and writes the DMG plus SHA-256 checksum to `dist/`.

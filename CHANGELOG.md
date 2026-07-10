@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1 - 2026-07-10
+
+- Refreshed the app icon with inward-facing glass cursor arrows.
+- Clarified the two-device requirement in the release materials.
+
 ## 1.1.0 - 2026-07-10
 
 - Added true simultaneous movement for the system cursor and blue pointer.
