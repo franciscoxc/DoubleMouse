@@ -32,6 +32,7 @@ What did DoubleMouse do instead?
 - Blue pointer mouse model:
 - Connection types: USB / Bluetooth / built-in
 - Accessibility permission granted to: Terminal / DoubleMouse / other
+- Input Monitoring permission granted to: Terminal / DoubleMouse / other
 
 ## Notes
 

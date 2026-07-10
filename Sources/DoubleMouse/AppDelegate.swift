@@ -7,10 +7,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var hidMonitor = HIDMouseMonitor(delegate: self)
 
     private var didShowAccessibilityWarning = false
-    private var invertBluePointerYAxis = true
-    private var frozenSystemCursorPositionDuringBlueMove: CGPoint?
-    private var releaseWorkItem: DispatchWorkItem?
-    private let clickSuppressor = PhysicalClickSuppressor()
+    private var blueButtonIsDown = false
+    private var blueDragStarted = false
+    private var bluePressPosition = CGPoint.zero
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -19,32 +18,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.imagePosition = .imageLeading
 
         overlay.show()
-        overlay.invertYAxis = invertBluePointerYAxis
         hidMonitor.start()
-        clickSuppressor.start()
         showAccessibilityWarningIfNeeded()
         rebuildMenu()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        releaseWorkItem?.cancel()
-        clickSuppressor.stop()
+        if blueDragStarted {
+            clickPerformer.endDrag(at: overlay.secondaryPointerPosition, returningTo: NSEvent.mouseLocation)
+        }
+        hidMonitor.stop()
     }
 
     private func rebuildMenu() {
         let menu = NSMenu()
 
-        let title = NSMenuItem(title: "DoubleMouse", action: nil, keyEquivalent: "")
-        title.isEnabled = false
-        menu.addItem(title)
-        menu.addItem(.separator())
-
-        menu.addItem(deviceSelectionMenu(title: "System Mouse", selectedID: hidMonitor.selectedPrimaryDeviceID, action: #selector(selectPrimaryDevice(_:))))
         menu.addItem(deviceSelectionMenu(title: "Blue Pointer Mouse", selectedID: hidMonitor.selectedSecondaryDeviceID, action: #selector(selectSecondaryDevice(_:))))
-
-        let assignSystem = NSMenuItem(title: "Set System Mouse From Next Movement", action: #selector(assignPrimaryFromNextMovement), keyEquivalent: "")
-        assignSystem.target = self
-        menu.addItem(assignSystem)
 
         let assignBlue = NSMenuItem(title: "Set Blue Pointer From Next Movement", action: #selector(assignSecondaryFromNextMovement), keyEquivalent: "")
         assignBlue.target = self
@@ -56,22 +45,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(prompt)
         }
 
-        let invertY = NSMenuItem(title: "Invert Blue Pointer Y Axis", action: #selector(toggleInvertBluePointerYAxis), keyEquivalent: "")
-        invertY.target = self
-        invertY.state = invertBluePointerYAxis ? .on : .off
-        menu.addItem(invertY)
-
         menu.addItem(.separator())
 
-        let primary = hidMonitor.primaryDeviceName ?? "not selected"
         let secondary = hidMonitor.secondaryDeviceName ?? "not selected"
-        let summary = NSMenuItem(title: "Using: \(primary) / \(secondary)", action: nil, keyEquivalent: "")
+        let capture = hidMonitor.isSecondaryDeviceSeized ? "exclusive" : "shared"
+        let summary = NSMenuItem(title: "Blue Pointer: \(secondary) [\(capture)]", action: nil, keyEquivalent: "")
         summary.isEnabled = false
         menu.addItem(summary)
 
-        let permission = NSMenuItem(title: "Request Accessibility Permission", action: #selector(requestAccessibilityPermission), keyEquivalent: "")
-        permission.target = self
-        menu.addItem(permission)
+        if !AXIsProcessTrusted() {
+            let permission = NSMenuItem(title: "Grant Accessibility Permission", action: #selector(requestAccessibilityPermission), keyEquivalent: "")
+            permission.target = self
+            menu.addItem(permission)
+        }
 
         menu.addItem(.separator())
 
@@ -103,34 +89,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return parent
     }
 
-    @objc private func selectPrimaryDevice(_ sender: NSMenuItem) {
-        guard let rawID = sender.representedObject as? String, let id = UInt64(rawID) else {
-            return
-        }
-        hidMonitor.setPrimaryDevice(id: id)
-        resetMovementCancellation()
-    }
-
     @objc private func selectSecondaryDevice(_ sender: NSMenuItem) {
         guard let rawID = sender.representedObject as? String, let id = UInt64(rawID) else {
             return
         }
         hidMonitor.setSecondaryDevice(id: id)
-        resetMovementCancellation()
-    }
-
-    @objc private func assignPrimaryFromNextMovement() {
-        hidMonitor.assignDeviceFromNextMovement(.primary)
     }
 
     @objc private func assignSecondaryFromNextMovement() {
-        hidMonitor.assignDeviceFromNextMovement(.secondary)
-    }
-
-    @objc private func toggleInvertBluePointerYAxis() {
-        invertBluePointerYAxis.toggle()
-        overlay.invertYAxis = invertBluePointerYAxis
-        rebuildMenu()
+        hidMonitor.assignSecondaryDeviceFromNextMovement()
     }
 
     @objc private func requestAccessibilityPermission() {
@@ -161,62 +128,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func resetMovementCancellation() {
-        frozenSystemCursorPositionDuringBlueMove = nil
-        releaseWorkItem?.cancel()
-        releaseWorkItem = nil
-    }
-
-    private func primeMovementCancellation() {
-        resetMovementCancellation()
-    }
-
 }
 
 extension AppDelegate: HIDMouseMonitorDelegate {
-    func mouseMonitor(_ monitor: HIDMouseMonitor, didMovePrimaryBy delta: CGPoint) {
-    }
-
     func mouseMonitor(_ monitor: HIDMouseMonitor, didMoveSecondaryBy delta: CGPoint) {
-        overlay.moveBy(delta)
-        cancelObservedSystemMovementFromBlueMouse()
-    }
+        overlay.moveSecondaryBy(delta)
 
-    private func cancelObservedSystemMovementFromBlueMouse() {
-        let frozenPosition = frozenSystemCursorPositionDuringBlueMove ?? NSEvent.mouseLocation
-        frozenSystemCursorPositionDuringBlueMove = frozenPosition
-        clickPerformer.moveSystemCursor(to: frozenPosition)
-        scheduleMovementRelease()
-    }
-
-    private func scheduleMovementRelease() {
-        releaseWorkItem?.cancel()
-
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self else {
-                return
-            }
-
-            self.frozenSystemCursorPositionDuringBlueMove = nil
-            self.releaseWorkItem = nil
+        guard blueButtonIsDown else {
+            return
         }
 
-        releaseWorkItem = workItem
-        DispatchQueue.main.async(execute: workItem)
+        let point = overlay.secondaryPointerPosition
+        if !blueDragStarted,
+           hypot(point.x - bluePressPosition.x, point.y - bluePressPosition.y) >= 3 {
+            blueDragStarted = true
+            clickPerformer.beginDrag(at: bluePressPosition, returningTo: NSEvent.mouseLocation)
+        }
+        if blueDragStarted {
+            clickPerformer.drag(to: point, returningTo: NSEvent.mouseLocation)
+        }
     }
 
-    func mouseMonitorDidSecondaryClick(_ monitor: HIDMouseMonitor, clickCount: Int) {
-        let returnPosition = frozenSystemCursorPositionDuringBlueMove ?? NSEvent.mouseLocation
-        clickSuppressor.suppressNextLeftClick()
-        let clickPoint = overlay.pointerPosition
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
-            self?.clickPerformer.performClick(at: clickPoint, returningTo: returnPosition)
+    func mouseMonitor(_ monitor: HIDMouseMonitor, didScrollSecondaryBy delta: Int32) {
+        clickPerformer.scroll(at: overlay.secondaryPointerPosition, verticalDelta: delta)
+    }
+
+    func mouseMonitor(_ monitor: HIDMouseMonitor, didChangeSecondaryButton isPressed: Bool) {
+        guard isPressed != blueButtonIsDown else {
+            return
         }
-        overlay.pulse()
+
+        blueButtonIsDown = isPressed
+        if isPressed {
+            blueDragStarted = false
+            bluePressPosition = overlay.secondaryPointerPosition
+            return
+        }
+
+        if blueDragStarted {
+            clickPerformer.endDrag(at: overlay.secondaryPointerPosition, returningTo: NSEvent.mouseLocation)
+        } else {
+            clickPerformer.performClick(at: overlay.secondaryPointerPosition, returningTo: NSEvent.mouseLocation)
+        }
+        blueDragStarted = false
+        overlay.pulseSecondary()
     }
 
     func mouseMonitorDevicesChanged(_ monitor: HIDMouseMonitor) {
-        primeMovementCancellation()
         rebuildMenu()
     }
 }

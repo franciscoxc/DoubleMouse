@@ -2,14 +2,48 @@ import AppKit
 import ApplicationServices
 
 final class ClickPerformer {
+    private let source = CGEventSource(stateID: .privateState)
+
+    init() {
+        source?.localEventsSuppressionInterval = 0
+    }
+
     func performClick(at point: CGPoint, returningTo returnPoint: CGPoint? = nil) {
         if performAccessibilityPress(at: point) {
-            if let returnPoint {
-                moveSystemCursor(to: returnPoint)
-            }
             return
         }
         performSyntheticClick(at: point, returningTo: returnPoint)
+    }
+
+    func beginDrag(at point: CGPoint, returningTo returnPoint: CGPoint) {
+        postMouseEvent(.leftMouseDown, at: point, returningTo: returnPoint)
+    }
+
+    func drag(to point: CGPoint, returningTo returnPoint: CGPoint) {
+        postMouseEvent(.leftMouseDragged, at: point, returningTo: returnPoint)
+    }
+
+    func endDrag(at point: CGPoint, returningTo returnPoint: CGPoint? = nil) {
+        postMouseEvent(.leftMouseUp, at: point, returningTo: returnPoint)
+    }
+
+    func scroll(at point: CGPoint, verticalDelta: Int32) {
+        let returnPoint = NSEvent.mouseLocation
+        guard verticalDelta != 0,
+              let event = CGEvent(
+                scrollWheelEvent2Source: source,
+                units: .line,
+                wheelCount: 1,
+                wheel1: verticalDelta,
+                wheel2: 0,
+                wheel3: 0
+              ) else {
+            return
+        }
+
+        event.location = quartzPoint(fromAppKitPoint: point)
+        event.post(tap: .cghidEventTap)
+        moveSystemCursor(to: returnPoint)
     }
 
     func moveSystemCursor(to point: CGPoint) {
@@ -34,17 +68,21 @@ final class ClickPerformer {
     }
 
     private func performSyntheticClick(at point: CGPoint, returningTo returnPoint: CGPoint?) {
-        let source = CGEventSource(stateID: .privateState)
-        source?.userData = EventMarker.doubleMouseSyntheticClick
+        postMouseEvent(.leftMouseDown, at: point)
+        postMouseEvent(.leftMouseUp, at: point)
 
-        let quartzPoint = quartzPoint(fromAppKitPoint: point)
-        guard let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: quartzPoint, mouseButton: .left),
-              let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: quartzPoint, mouseButton: .left) else {
-            return
+        if let returnPoint {
+            moveSystemCursor(to: returnPoint)
         }
+    }
 
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
+    private func postMouseEvent(_ type: CGEventType, at point: CGPoint, returningTo returnPoint: CGPoint? = nil) {
+        CGEvent(
+            mouseEventSource: source,
+            mouseType: type,
+            mouseCursorPosition: quartzPoint(fromAppKitPoint: point),
+            mouseButton: .left
+        )?.post(tap: .cghidEventTap)
 
         if let returnPoint {
             moveSystemCursor(to: returnPoint)

@@ -2,28 +2,22 @@ import AppKit
 import IOKit.hid
 
 protocol HIDMouseMonitorDelegate: AnyObject {
-    func mouseMonitor(_ monitor: HIDMouseMonitor, didMovePrimaryBy delta: CGPoint)
     func mouseMonitor(_ monitor: HIDMouseMonitor, didMoveSecondaryBy delta: CGPoint)
-    func mouseMonitorDidSecondaryClick(_ monitor: HIDMouseMonitor, clickCount: Int)
+    func mouseMonitor(_ monitor: HIDMouseMonitor, didScrollSecondaryBy delta: Int32)
+    func mouseMonitor(_ monitor: HIDMouseMonitor, didChangeSecondaryButton isPressed: Bool)
     func mouseMonitorDevicesChanged(_ monitor: HIDMouseMonitor)
 }
 
 final class HIDMouseMonitor {
-    enum AssignmentTarget {
-        case primary
-        case secondary
-    }
-
     weak var delegate: HIDMouseMonitorDelegate?
 
     private var manager: IOHIDManager!
     private var devices: [UInt64: HIDMouseDevice] = [:]
-    private var primaryDeviceID: UInt64?
+    private var deviceIDsByObject: [ObjectIdentifier: UInt64] = [:]
+    private var nextDeviceObjectID: UInt64 = 1
     private var secondaryDeviceID: UInt64?
-    private var pendingAssignment: AssignmentTarget?
-    private var lastSecondaryClickAt: Date?
-    private var secondaryClickCount = 0
-    private(set) var secondaryEventCount = 0
+    private var seizedSecondaryDeviceID: UInt64?
+    private var awaitingSecondaryAssignment = false
 
     var secondaryDeviceName: String? {
         guard let secondaryDeviceID else {
@@ -32,23 +26,16 @@ final class HIDMouseMonitor {
         return devices[secondaryDeviceID]?.name
     }
 
-    var primaryDeviceName: String? {
-        guard let primaryDeviceID else {
-            return nil
-        }
-        return devices[primaryDeviceID]?.name
-    }
-
     var allDevices: [HIDMouseDevice] {
         devices.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    var selectedPrimaryDeviceID: UInt64? {
-        primaryDeviceID
-    }
-
     var selectedSecondaryDeviceID: UInt64? {
         secondaryDeviceID
+    }
+
+    var isSecondaryDeviceSeized: Bool {
+        seizedSecondaryDeviceID == secondaryDeviceID && secondaryDeviceID != nil
     }
 
     init(delegate: HIDMouseMonitorDelegate?) {
@@ -56,7 +43,8 @@ final class HIDMouseMonitor {
     }
 
     func start() {
-        manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        // Public SDK value for kIOHIDManagerOptionIndependentDevices.
+        manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(0x8))
 
         let matching = [
             [
@@ -78,21 +66,18 @@ final class HIDMouseMonitor {
         let context = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
         IOHIDManagerRegisterDeviceMatchingCallback(manager, deviceAddedCallback, context)
         IOHIDManagerRegisterDeviceRemovalCallback(manager, deviceRemovedCallback, context)
-        IOHIDManagerRegisterInputValueCallback(manager, inputValueCallback, context)
         IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
         IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
     }
 
-    func setPrimaryDevice(id: UInt64) {
-        guard devices[id] != nil else {
-            return
+    func stop() {
+        for device in devices.values {
+            IOHIDDeviceUnscheduleFromRunLoop(device.reference, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+            IOHIDDeviceClose(device.reference, IOOptionBits(kIOHIDOptionsTypeNone))
         }
-
-        primaryDeviceID = id
-        if secondaryDeviceID == id {
-            secondaryDeviceID = devices.keys.first(where: { $0 != id })
-        }
-        delegate?.mouseMonitorDevicesChanged(self)
+        seizedSecondaryDeviceID = nil
+        IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
     }
 
     func setSecondaryDevice(id: UInt64) {
@@ -101,71 +86,62 @@ final class HIDMouseMonitor {
         }
 
         secondaryDeviceID = id
-        if primaryDeviceID == id {
-            primaryDeviceID = devices.keys.first(where: { $0 != id })
-        }
+        captureSecondaryDevice()
         delegate?.mouseMonitorDevicesChanged(self)
     }
 
-    func assignDeviceFromNextMovement(_ target: AssignmentTarget) {
-        pendingAssignment = target
+    func assignSecondaryDeviceFromNextMovement() {
+        awaitingSecondaryAssignment = true
         delegate?.mouseMonitorDevicesChanged(self)
     }
 
     var assignmentPrompt: String? {
-        guard let pendingAssignment else {
-            return nil
-        }
-
-        return switch pendingAssignment {
-        case .primary:
-            "Move the system mouse now"
-        case .secondary:
-            "Move the blue pointer mouse now"
-        }
+        awaitingSecondaryAssignment ? "Move the blue pointer mouse now" : nil
     }
 
     fileprivate func deviceAdded(_ device: IOHIDDevice) {
-        let id = registryID(for: device)
+        let id = deviceObjectID(for: device)
         devices[id] = HIDMouseDevice(
             id: id,
-            name: deviceName(for: device)
+            name: deviceName(for: device),
+            reference: device
         )
 
-        if primaryDeviceID == nil {
-            primaryDeviceID = id
-        } else if secondaryDeviceID == nil && primaryDeviceID != id {
+        let context = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        IOHIDDeviceRegisterInputValueCallback(device, inputValueCallback, context)
+        IOHIDDeviceScheduleWithRunLoop(device, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
+
+        if secondaryDeviceID == nil && devices.count >= 2 {
             secondaryDeviceID = id
         }
 
+        captureSecondaryDevice()
         delegate?.mouseMonitorDevicesChanged(self)
     }
 
     fileprivate func deviceRemoved(_ device: IOHIDDevice) {
-        let id = registryID(for: device)
+        let id = deviceObjectID(for: device)
+        IOHIDDeviceUnscheduleFromRunLoop(device, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone))
         devices.removeValue(forKey: id)
 
-        if secondaryDeviceID == id {
-            secondaryDeviceID = devices.keys.first(where: { $0 != primaryDeviceID })
-        }
-        if primaryDeviceID == id {
-            primaryDeviceID = devices.keys.first
+        if seizedSecondaryDeviceID == id {
+            seizedSecondaryDeviceID = nil
         }
 
+        if secondaryDeviceID == id {
+            secondaryDeviceID = nil
+        }
+
+        captureSecondaryDevice()
         delegate?.mouseMonitorDevicesChanged(self)
     }
 
     fileprivate func inputValue(_ value: IOHIDValue) {
         let element = IOHIDValueGetElement(value)
         let device = IOHIDElementGetDevice(element)
-        let deviceID = registryID(for: device)
-
-        if primaryDeviceID == nil {
-            primaryDeviceID = deviceID
-        } else if secondaryDeviceID == nil && primaryDeviceID != deviceID {
-            secondaryDeviceID = deviceID
-            delegate?.mouseMonitorDevicesChanged(self)
-        }
+        let deviceID = deviceObjectID(for: device)
 
         let usagePage = IOHIDElementGetUsagePage(element)
         let usage = IOHIDElementGetUsage(element)
@@ -175,38 +151,18 @@ final class HIDMouseMonitor {
             return
         }
 
-        if let pendingAssignment,
+        if awaitingSecondaryAssignment,
            usagePage == kHIDPage_GenericDesktop,
            (usage == kHIDUsage_GD_X || usage == kHIDUsage_GD_Y),
            intValue != 0 {
-            switch pendingAssignment {
-            case .primary:
-                setPrimaryDevice(id: deviceID)
-            case .secondary:
-                setSecondaryDevice(id: deviceID)
-            }
-            self.pendingAssignment = nil
+            awaitingSecondaryAssignment = false
+            setSecondaryDevice(id: deviceID)
             delegate?.mouseMonitorDevicesChanged(self)
             return
         }
 
         if deviceID == secondaryDeviceID {
-            secondaryEventCount += 1
             handleSecondaryInput(usagePage: usagePage, usage: usage, value: intValue)
-        } else if deviceID == primaryDeviceID {
-            handlePrimaryInput(usagePage: usagePage, usage: usage, value: intValue)
-        }
-    }
-
-    private func handlePrimaryInput(usagePage: UInt32, usage: UInt32, value: CFIndex) {
-        guard usagePage == kHIDPage_GenericDesktop else {
-            return
-        }
-
-        if usage == kHIDUsage_GD_X {
-            delegate?.mouseMonitor(self, didMovePrimaryBy: CGPoint(x: value, y: 0))
-        } else if usage == kHIDUsage_GD_Y {
-            delegate?.mouseMonitor(self, didMovePrimaryBy: CGPoint(x: 0, y: value))
         }
     }
 
@@ -216,37 +172,52 @@ final class HIDMouseMonitor {
                 delegate?.mouseMonitor(self, didMoveSecondaryBy: CGPoint(x: value, y: 0))
             } else if usage == kHIDUsage_GD_Y {
                 delegate?.mouseMonitor(self, didMoveSecondaryBy: CGPoint(x: 0, y: value))
+            } else if usage == kHIDUsage_GD_Wheel {
+                delegate?.mouseMonitor(self, didScrollSecondaryBy: Int32(clamping: value))
             }
             return
         }
 
-        guard usagePage == kHIDPage_Button, usage == 1, value == 1 else {
+        guard usagePage == kHIDPage_Button, usage == 1 else {
+            return
+        }
+        delegate?.mouseMonitor(self, didChangeSecondaryButton: value != 0)
+    }
+
+    private func captureSecondaryDevice() {
+        guard seizedSecondaryDeviceID != secondaryDeviceID else {
             return
         }
 
-        let now = Date()
-        if let lastSecondaryClickAt, now.timeIntervalSince(lastSecondaryClickAt) < 0.45 {
-            secondaryClickCount += 1
-        } else {
-            secondaryClickCount = 1
+        if let seizedSecondaryDeviceID, let oldDevice = devices[seizedSecondaryDeviceID]?.reference {
+            IOHIDDeviceClose(oldDevice, IOOptionBits(kIOHIDOptionsTypeNone))
+            IOHIDDeviceOpen(oldDevice, IOOptionBits(kIOHIDOptionsTypeNone))
+            self.seizedSecondaryDeviceID = nil
         }
-        lastSecondaryClickAt = now
 
-        delegate?.mouseMonitorDidSecondaryClick(self, clickCount: secondaryClickCount)
+        guard let secondaryDeviceID,
+              let device = devices[secondaryDeviceID]?.reference else {
+            return
+        }
+
+        IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone))
+        if IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeSeizeDevice)) == kIOReturnSuccess {
+            seizedSecondaryDeviceID = secondaryDeviceID
+        } else {
+            IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
+        }
     }
 
-    private func registryID(for device: IOHIDDevice) -> UInt64 {
-        var registryID: UInt64 = 0
-        let service = IOHIDDeviceGetService(device)
-        if service != 0, IORegistryEntryGetRegistryEntryID(service, &registryID) == KERN_SUCCESS {
-            return registryID
+    private func deviceObjectID(for device: IOHIDDevice) -> UInt64 {
+        let objectID = ObjectIdentifier(device)
+        if let id = deviceIDsByObject[objectID] {
+            return id
         }
 
-        if let property = IOHIDDeviceGetProperty(device, kIOHIDLocationIDKey as CFString) {
-            let number = property as! NSNumber
-            return number.uint64Value
-        }
-        return UInt64(bitPattern: Int64(ObjectIdentifier(device).hashValue))
+        let id = nextDeviceObjectID
+        nextDeviceObjectID += 1
+        deviceIDsByObject[objectID] = id
+        return id
     }
 
     private func deviceName(for device: IOHIDDevice) -> String {
@@ -267,6 +238,7 @@ final class HIDMouseMonitor {
 struct HIDMouseDevice {
     let id: UInt64
     let name: String
+    let reference: IOHIDDevice
 }
 
 private func mouseMonitor(from context: UnsafeMutableRawPointer?) -> HIDMouseMonitor {

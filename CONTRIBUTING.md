@@ -8,7 +8,8 @@ When reporting a bug, please include:
 - Mac model.
 - Mouse or trackpad models.
 - USB, Bluetooth, or built-in device details.
-- Whether Accessibility permission was granted.
+- Whether Accessibility and Input Monitoring permissions were granted.
+- Whether the issue affects movement, clicks, scrolling, or dragging.
 - Steps to reproduce the issue.
 
 For code changes, keep the implementation focused on the current user-space AppKit/IOHID approach unless the issue specifically discusses a lower-level architecture.

@@ -27,7 +27,8 @@ How were you using DoubleMouse?
 - Did the blue pointer feel responsive?
 - Did clicks happen where you expected?
 - Did the system cursor stay where you expected?
-- Did you run into a drag-and-drop workflow? Blue-pointer dragging is not supported yet, but examples are useful.
+- Did scrolling happen under the blue pointer?
+- Did blue-pointer drag-and-drop behave as expected?
 
 ## Device setup
 

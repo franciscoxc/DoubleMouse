@@ -4,13 +4,11 @@ final class PointerOverlayController {
     private let window: NSWindow
     private let pointerView: PointerView
 
-    var pointerPosition: CGPoint = CGPoint(x: NSScreen.main?.frame.midX ?? 400, y: NSScreen.main?.frame.midY ?? 300) {
+    var secondaryPointerPosition: CGPoint = CGPoint(x: NSScreen.main?.frame.midX ?? 400, y: NSScreen.main?.frame.midY ?? 300) {
         didSet {
-            pointerView.pointerPosition = pointerPosition
+            pointerView.secondaryPointerPosition = secondaryPointerPosition
         }
     }
-
-    var invertYAxis = false
 
     init() {
         let frame = NSScreen.screens.reduce(CGRect.null) { partial, screen in
@@ -18,7 +16,7 @@ final class PointerOverlayController {
         }
 
         pointerView = PointerView(frame: frame)
-        pointerView.pointerPosition = pointerPosition
+        pointerView.secondaryPointerPosition = secondaryPointerPosition
 
         window = NSWindow(
             contentRect: frame,
@@ -38,26 +36,31 @@ final class PointerOverlayController {
         window.orderFrontRegardless()
     }
 
-    func moveBy(_ delta: CGPoint) {
-        let frame = window.frame
-        let yDelta = invertYAxis ? -delta.y : delta.y
-        var next = CGPoint(x: pointerPosition.x + delta.x, y: pointerPosition.y + yDelta)
-        next.x = min(max(next.x, frame.minX), frame.maxX)
-        next.y = min(max(next.y, frame.minY), frame.maxY)
-        pointerPosition = next
+    func moveSecondaryBy(_ delta: CGPoint) {
+        secondaryPointerPosition = clampedPoint(
+            CGPoint(x: secondaryPointerPosition.x + delta.x, y: secondaryPointerPosition.y - delta.y)
+        )
     }
 
-    func pulse() {
-        pointerView.pulse()
+    func pulseSecondary() {
+        pointerView.pulseSecondary()
+    }
+
+    private func clampedPoint(_ point: CGPoint) -> CGPoint {
+        let frame = window.frame
+        return CGPoint(
+            x: min(max(point.x, frame.minX), frame.maxX),
+            y: min(max(point.y, frame.minY), frame.maxY)
+        )
     }
 }
 
 final class PointerView: NSView {
-    var pointerPosition: CGPoint = .zero {
+    var secondaryPointerPosition: CGPoint = .zero {
         didSet { needsDisplay = true }
     }
 
-    private var pulseUntil: Date?
+    private var secondaryPulseUntil: Date?
     private let cursorImage = NSCursor.arrow.image
     private lazy var blueCursorImage = tintedCursorImage(color: .systemBlue)
 
@@ -66,12 +69,12 @@ final class PointerView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        drawPointerImage(blueCursorImage, at: pointerPosition, mirrored: true)
-        drawPulseIfNeeded(at: pointerPosition, color: .systemBlue, until: pulseUntil)
+        drawPointerImage(blueCursorImage, at: secondaryPointerPosition, mirrored: true)
+        drawPulseIfNeeded(at: secondaryPointerPosition, color: .systemBlue, until: secondaryPulseUntil)
     }
 
-    func pulse() {
-        pulseUntil = Date().addingTimeInterval(0.35)
+    func pulseSecondary() {
+        secondaryPulseUntil = Date().addingTimeInterval(0.35)
         needsDisplay = true
     }
 

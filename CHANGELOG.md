@@ -1,11 +1,14 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 - 2026-07-10
 
-- Improved README technical and usability notes.
-- Documented that blue-pointer drag-and-drop is not supported yet.
-- Added GitHub issue templates.
-- Kept the stable one-blue-pointer architecture after testing a two-virtual-pointer experiment.
+- Added true simultaneous movement for the system cursor and blue pointer.
+- Captured only the selected secondary HID device, leaving the primary pointer native to macOS.
+- Added independent blue-pointer clicks, scrolling, and drag-and-drop.
+- Kept the system cursor in place while blue actions are emitted.
+- Simplified the menu to blue-device selection and capture status.
+- Added the DoubleMouse app icon and reproducible universal DMG packaging.
+- Removed cursor-cancellation experiments, event counters, obsolete modes, and unused click suppression.
 
 ## 1.0.3 - 2026-05-31
 
