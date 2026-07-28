@@ -10,7 +10,7 @@ Ever wondered how to be faster on your Mac? What if you had two physical mice, e
 
 ## Download
 
-- [Download DoubleMouse 1.1.1 for macOS from GitHub](https://github.com/franciscoxc/DoubleMouse/releases/download/v1.1.1/DoubleMouse-1.1.1.dmg)
+- [Download DoubleMouse 1.2.0 for macOS from GitHub](https://github.com/franciscoxc/DoubleMouse/releases/download/v1.2.0/DoubleMouse-1.2.0.dmg)
 - [Download mirror and project page](https://apps.franxc.com/doublemouse/)
 
 The app requires two pointing devices: two physical mice, or the built-in MacBook trackpad plus one external mouse. The downloadable build supports Apple Silicon and Intel Macs running macOS 13 or later.
@@ -22,14 +22,16 @@ The app requires two pointing devices: two physical mice, or the built-in MacBoo
 3. If the blue pointer does not react, also enable DoubleMouse under System Settings > Privacy & Security > Input Monitoring.
 4. Use `Set Blue Pointer From Next Movement` from the menu bar when you need to assign a different device.
 
-Version 1.1.1 is ad-hoc signed but not notarized. macOS may require you to approve the first launch under System Settings > Privacy & Security.
+The published DMG is ad-hoc signed but not notarized. macOS may require you to approve the first launch under System Settings > Privacy & Security.
 
 ## Features
 
 - Truly simultaneous movement of the normal macOS cursor and the blue pointer.
-- Independent clicks for both physical devices.
-- Scroll-wheel support at the blue pointer location.
+- Independent left and right clicks for both physical devices.
+- Vertical and horizontal scrolling at the blue pointer location.
 - Drag-and-drop with either pointer.
+- Adjustable blue pointer speed and optional acceleration, so a high-DPI mouse can be matched to the system cursor.
+- The chosen blue device is remembered between launches.
 - External USB and Bluetooth mouse support.
 - MacBook trackpad plus external mouse support when macOS exposes both HID devices.
 - Compact menu bar device selection.
@@ -45,13 +47,19 @@ The implementation uses public AppKit, IOKit, Accessibility, and CoreGraphics AP
 
 - macOS still has one global mouse-button state, so two simultaneous drag operations are not supported.
 - Some games, remote desktops, canvases, or custom controls may reject synthetic pointer events.
-- The selected blue device is not persisted between launches yet.
+- The blue device is remembered by USB/Bluetooth port, so moving a mouse to a different port clears the selection.
 - The public DMG is not notarized until a Developer ID certificate is available.
 
 ## Run From Source
 
 ```sh
 swift run DoubleMouse
+```
+
+The pointer scaling curve has a self-check:
+
+```sh
+swift run DoubleMouse --selftest
 ```
 
 When running from Terminal, macOS assigns the relevant privacy permissions to Terminal. The packaged app requests them as DoubleMouse.

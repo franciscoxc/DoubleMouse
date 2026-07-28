@@ -1,5 +1,7 @@
 import AppKit
 
+private let sensitivityOptions: [Double] = [0.5, 0.75, 1.0, 1.5, 2.0]
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let overlay = PointerOverlayController()
@@ -13,9 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "DoubleMouse"
         statusItem.button?.image = NSImage(systemSymbolName: "cursorarrow.motionlines", accessibilityDescription: "DoubleMouse")
-        statusItem.button?.imagePosition = .imageLeading
 
         overlay.show()
         hidMonitor.start()
@@ -33,7 +33,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func rebuildMenu() {
         let menu = NSMenu()
 
-        menu.addItem(deviceSelectionMenu(title: "Blue Pointer Mouse", selectedID: hidMonitor.selectedSecondaryDeviceID, action: #selector(selectSecondaryDevice(_:))))
+        let devices = NSMenuItem(title: "Blue Pointer Mouse", action: nil, keyEquivalent: "")
+        devices.submenu = deviceSubmenu()
+        menu.addItem(devices)
 
         let assignBlue = NSMenuItem(title: "Set Blue Pointer From Next Movement", action: #selector(assignSecondaryFromNextMovement), keyEquivalent: "")
         assignBlue.target = self
@@ -44,6 +46,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             prompt.isEnabled = false
             menu.addItem(prompt)
         }
+
+        menu.addItem(.separator())
+
+        let speed = NSMenuItem(title: "Pointer Speed", action: nil, keyEquivalent: "")
+        speed.submenu = speedSubmenu()
+        menu.addItem(speed)
+
+        let accelerationItem = NSMenuItem(title: "Pointer Acceleration", action: #selector(toggleAcceleration), keyEquivalent: "")
+        accelerationItem.target = self
+        accelerationItem.state = overlay.acceleration ? .on : .off
+        menu.addItem(accelerationItem)
 
         menu.addItem(.separator())
 
@@ -60,40 +73,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
-
-        let quit = NSMenuItem(title: "Quit DoubleMouse", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.addItem(quit)
+        menu.addItem(NSMenuItem(title: "Quit DoubleMouse", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
         statusItem.menu = menu
     }
 
-    private func deviceSelectionMenu(title: String, selectedID: UInt64?, action: Selector) -> NSMenuItem {
-        let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+    private func deviceSubmenu() -> NSMenu {
         let submenu = NSMenu()
 
-        if hidMonitor.allDevices.isEmpty {
+        guard !hidMonitor.allDevices.isEmpty else {
             let empty = NSMenuItem(title: "Move a mouse to detect devices", action: nil, keyEquivalent: "")
             empty.isEnabled = false
             submenu.addItem(empty)
-        } else {
-            for device in hidMonitor.allDevices {
-                let item = NSMenuItem(title: device.name, action: action, keyEquivalent: "")
-                item.target = self
-                item.representedObject = String(device.id)
-                item.state = device.id == selectedID ? .on : .off
-                submenu.addItem(item)
-            }
+            return submenu
         }
 
-        parent.submenu = submenu
-        return parent
+        for device in hidMonitor.allDevices {
+            let item = NSMenuItem(title: device.name, action: #selector(selectSecondaryDevice(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = device.id
+            item.state = device.id == hidMonitor.selectedSecondaryDeviceID ? .on : .off
+            submenu.addItem(item)
+        }
+        return submenu
+    }
+
+    private func speedSubmenu() -> NSMenu {
+        let submenu = NSMenu()
+        for value in sensitivityOptions {
+            let item = NSMenuItem(title: String(format: "%g×", value), action: #selector(selectSensitivity(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = value
+            item.state = abs(overlay.sensitivity - value) < 0.001 ? .on : .off
+            submenu.addItem(item)
+        }
+        return submenu
     }
 
     @objc private func selectSecondaryDevice(_ sender: NSMenuItem) {
-        guard let rawID = sender.representedObject as? String, let id = UInt64(rawID) else {
+        guard let id = sender.representedObject as? UInt64 else {
             return
         }
         hidMonitor.setSecondaryDevice(id: id)
+    }
+
+    @objc private func selectSensitivity(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? Double else {
+            return
+        }
+        overlay.sensitivity = value
+        rebuildMenu()
+    }
+
+    @objc private func toggleAcceleration() {
+        overlay.acceleration.toggle()
+        rebuildMenu()
     }
 
     @objc private func assignSecondaryFromNextMovement() {
@@ -101,11 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func requestAccessibilityPermission() {
-        requestAccessibilityIfNeeded(prompt: true)
-    }
-
-    private func requestAccessibilityIfNeeded(prompt: Bool = false) {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: prompt] as CFDictionary
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
@@ -124,7 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Later")
 
         if alert.runModal() == .alertFirstButtonReturn {
-            requestAccessibilityIfNeeded(prompt: true)
+            requestAccessibilityPermission()
         }
     }
 
@@ -149,11 +179,20 @@ extension AppDelegate: HIDMouseMonitorDelegate {
         }
     }
 
-    func mouseMonitor(_ monitor: HIDMouseMonitor, didScrollSecondaryBy delta: Int32) {
-        clickPerformer.scroll(at: overlay.secondaryPointerPosition, verticalDelta: delta)
+    func mouseMonitor(_ monitor: HIDMouseMonitor, didScrollSecondaryBy delta: CGPoint) {
+        clickPerformer.scroll(at: overlay.secondaryPointerPosition, delta: delta)
     }
 
-    func mouseMonitor(_ monitor: HIDMouseMonitor, didChangeSecondaryButton isPressed: Bool) {
+    func mouseMonitor(_ monitor: HIDMouseMonitor, didChangeSecondaryButton button: MouseButton, isPressed: Bool) {
+        guard button == .left else {
+            // Right button: no drag, macOS has no second button state to spare anyway.
+            if !isPressed {
+                clickPerformer.performRightClick(at: overlay.secondaryPointerPosition, returningTo: NSEvent.mouseLocation)
+                overlay.pulseSecondary()
+            }
+            return
+        }
+
         guard isPressed != blueButtonIsDown else {
             return
         }

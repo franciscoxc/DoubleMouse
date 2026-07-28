@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0 - 2026-07-28
+
+- Added right-click and horizontal scrolling for the blue pointer.
+- Added adjustable pointer speed and optional acceleration, so raw HID counts no longer map 1:1 to pixels.
+- The selected blue device is now remembered between launches.
+- Fixed the overlay not following display changes: connecting a monitor or changing resolution left the blue pointer unable to reach the new screen.
+- Fixed the blue pointer being drawn at the wrong offset when a display sits left of or below the main one.
+- Fixed reconnected devices inheriting the identity of an unplugged one, by keying devices on their IOService registry ID.
+- Coalesced each HID report into a single movement, halving emitted drag events and redrawing only the area around the pointer instead of the whole desktop.
+- Narrowed the Accessibility press path to button-like controls, so clicks on text fields, tables, and web content behave like real clicks.
+
 ## 1.1.1 - 2026-07-10
 
 - Refreshed the app icon with inward-facing glass cursor arrows.
