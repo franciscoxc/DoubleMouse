@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#26282c"/><stop offset="1" stop-color="#121316"/>
+    </linearGradient>
+    <linearGradient id="bBody" x1=".08" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#cdeaff" stop-opacity=".70"/>
+      <stop offset=".34" stop-color="#43a4ff" stop-opacity=".42"/>
+      <stop offset=".74" stop-color="#0f66d8" stop-opacity=".36"/>
+      <stop offset="1" stop-color="#0a3ea0" stop-opacity=".54"/>
+    </linearGradient>
+    <linearGradient id="sBody" x1=".08" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".72"/>
+      <stop offset=".34" stop-color="#eaf1f8" stop-opacity=".34"/>
+      <stop offset=".74" stop-color="#aebccb" stop-opacity=".30"/>
+      <stop offset="1" stop-color="#69788a" stop-opacity=".48"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2=".85" y2="1">
+      <stop offset=".02" stop-color="#fff" stop-opacity="0.96"/>
+      <stop offset=".17" stop-color="#fff" stop-opacity=".10"/>
+      <stop offset=".50" stop-color="#fff" stop-opacity="0"/>
+      <stop offset=".66" stop-color="#fff" stop-opacity="0.30"/>
+      <stop offset=".78" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bRim" x1="0" y1="0" x2=".3" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".98"/>
+      <stop offset=".3" stop-color="#b7e4ff" stop-opacity=".72"/>
+      <stop offset=".62" stop-color="#4aa8ff" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#0b2f7d" stop-opacity=".72"/>
+    </linearGradient>
+    <linearGradient id="sRim" x1="0" y1="0" x2=".3" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset=".3" stop-color="#f0f5fa" stop-opacity=".7"/>
+      <stop offset=".62" stop-color="#c2ccd8" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#5a6674" stop-opacity=".72"/>
+    </linearGradient>
+    <filter id="sh" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0.5" dy="1.6" stdDeviation="1.7" flood-color="#04121f" flood-opacity=".42"/>
+    </filter>
+    <filter id="tileShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="13" flood-color="#000" flood-opacity=".18"/>
+    </filter>
+    <clipPath id="cA" clipPathUnits="userSpaceOnUse"><path d="M0 0 L0 22.6 L5.7 17.4 L9.2 25.3 L12.9 23.7 L9.3 15.9 L16.3 15.9 Z"/></clipPath>
+    <clipPath id="tileClip"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+    <clipPath id="ck"><path transform="translate(100,100) scale(6.866666666666666) translate(25.75,14.4) scale(2.65)" d="M0 0 L0 22.6 L5.7 17.4 L9.2 25.3 L12.9 23.7 L9.3 15.9 L16.3 15.9 Z"/></clipPath>
+    
+    <g id="gBlue" filter="url(#sh)">
+      <path d="M0 0 L0 22.6 L5.7 17.4 L9.2 25.3 L12.9 23.7 L9.3 15.9 L16.3 15.9 Z" fill="url(#bBody)"/>
+      <path d="M0 0 L0 22.6 L5.7 17.4 L9.2 25.3 L12.9 23.7 L9.3 15.9 L16.3 15.9 Z" fill="url(#sheen)"/>
+      <g clip-path="url(#cA)"><path d="M0 0 L0 22.6 L5.7 17.4 L9.2 25.3 L12.9 23.7 L9.3 15.9 L16.3 15.9 Z" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1.6"/></g>
+      <path d="M0 0 L0 22.6 L5.7 17.4 L9.2 25.3 L12.9 23.7 L9.3 15.9 L16.3 15.9 Z" fill="none" stroke="url(#bRim)" stroke-width=".62" stroke-linejoin="round"/>
+    </g>
+    
+    <g id="gSilver" filter="url(#sh)">
+      <path d="M0 0 L0 22.6 L5.7 17.4 L9.2 25.3 L12.9 23.7 L9.3 15.9 L16.3 15.9 Z" fill="url(#sBody)"/>
+      <path d="M0 0 L0 22.6 L5.7 17.4 L9.2 25.3 L12.9 23.7 L9.3 15.9 L16.3 15.9 Z" fill="url(#sheen)"/>
+      <g clip-path="url(#cA)"><path d="M0 0 L0 22.6 L5.7 17.4 L9.2 25.3 L12.9 23.7 L9.3 15.9 L16.3 15.9 Z" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="1.6"/></g>
+      <path d="M0 0 L0 22.6 L5.7 17.4 L9.2 25.3 L12.9 23.7 L9.3 15.9 L16.3 15.9 Z" fill="none" stroke="url(#sRim)" stroke-width=".62" stroke-linejoin="round"/>
+    </g>
+  </defs>
+
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)" filter="url(#tileShadow)"/>
+  <g clip-path="url(#tileClip)">
+    <g transform="translate(100,100) scale(6.866666666666666)">
+      <g transform="translate(25.75,14.4) scale(2.65)"><use href="#gBlue"/></g>
+      <g transform="translate(51.05,38.6) scale(2.65)"><use href="#gSilver"/></g>
+    </g>
+    <g clip-path="url(#ck)">
+      <path transform="translate(100,100) scale(6.866666666666666) translate(51.05,38.6) scale(2.65)" d="M0 0 L0 22.6 L5.7 17.4 L9.2 25.3 L12.9 23.7 L9.3 15.9 L16.3 15.9 Z" fill="#0c4fae" fill-opacity=".30"/>
+    </g>
+  </g>
+</svg>

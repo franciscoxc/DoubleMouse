@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1 - 2026-07-28
+
+- Redrew the app icon: two translucent glass pointers overlapping on a light macOS tile, replacing the pair that faced away from each other.
+- Added the vector sources for the icon, including a dark-appearance variant.
+
 ## 1.2.0 - 2026-07-28
 
 - Added right-click and horizontal scrolling for the blue pointer.
