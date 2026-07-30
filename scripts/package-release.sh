@@ -35,14 +35,24 @@ plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Inf
 plutil -replace CFBundleVersion -string "${VERSION//./}" "$APP/Contents/Info.plist"
 
 cp -X "$ROOT/Assets/DoubleMouse.icns" "$APP/Contents/Resources/DoubleMouse.icns"
-xattr -cr "$APP"
-
 SIGNING_IDENTITY="${CODESIGN_IDENTITY:--}"
 if [[ "$SIGNING_IDENTITY" == "-" ]]; then
-    codesign --force --sign - --timestamp=none "$APP"
+    SIGN_ARGS=(--sign - --timestamp=none)
 else
-    codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP"
+    SIGN_ARGS=(--options runtime --timestamp --sign "$SIGNING_IDENTITY")
 fi
+
+# macOS re-applies com.apple.provenance on its own, sometimes between clearing
+# the attributes and signing, and codesign rejects any bundle that carries one.
+# Retry rather than lose a release build to the race.
+for attempt in 1 2 3; do
+    xattr -cr "$APP"
+    codesign --force "${SIGN_ARGS[@]}" "$APP" && break
+    if [[ $attempt -eq 3 ]]; then
+        echo "codesign kept failing on extended attributes after three tries" >&2
+        exit 1
+    fi
+done
 codesign --verify --deep --strict "$APP"
 
 rm -f "$DMG" "$DMG.sha256"
