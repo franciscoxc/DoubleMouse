@@ -3,15 +3,20 @@ set -euo pipefail
 
 VERSION="${1:-1.1.0}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PACKAGE_DIR="$ROOT/.build/release-package"
+# Build outside the repository. This checkout can live under Desktop or
+# Documents, which iCloud Drive syncs, and its file provider stamps
+# com.apple.FinderInfo on the app bundle while the build is running. codesign
+# then refuses the bundle with "resource fork, Finder information, or similar
+# detritus not allowed", intermittently, depending on when the daemon runs.
+PACKAGE_DIR="$(mktemp -d /private/tmp/doublemouse-release.XXXXXX)"
 BUILD_DIR="$PACKAGE_DIR/swift-build"
 APP="$PACKAGE_DIR/DoubleMouse.app"
 RW_DMG="$PACKAGE_DIR/DoubleMouse-rw.dmg"
 MOUNT="$PACKAGE_DIR/mount"
 DIST="$ROOT/dist"
-DMG="$DIST/DoubleMouse-$VERSION.dmg"
+# Staged here and moved into DIST once it is signed, notarized, and stapled.
+DMG="$PACKAGE_DIR/DoubleMouse-$VERSION.dmg"
 
-rm -rf "$PACKAGE_DIR"
 MOUNTED=0
 cleanup() {
     if [[ $MOUNTED -eq 1 ]]; then
@@ -45,13 +50,19 @@ fi
 # macOS re-applies com.apple.provenance on its own, sometimes between clearing
 # the attributes and signing, and codesign rejects any bundle that carries one.
 # Retry rather than lose a release build to the race.
+# The condition of an `if` is exempt from set -e; `cmd && break` is not, and
+# would abort the script on the first failure instead of retrying.
 for attempt in 1 2 3; do
     xattr -cr "$APP"
-    codesign --force "${SIGN_ARGS[@]}" "$APP" && break
+    if codesign --force "${SIGN_ARGS[@]}" "$APP"; then
+        break
+    fi
     if [[ $attempt -eq 3 ]]; then
-        echo "codesign kept failing on extended attributes after three tries" >&2
+        echo "codesign failed three times; extended attributes still present:" >&2
+        xattr -lr "$APP" >&2
         exit 1
     fi
+    sleep 2
 done
 codesign --verify --deep --strict "$APP"
 
@@ -89,6 +100,10 @@ fi
 
 # After stapling, because stapling rewrites the disk image.
 hdiutil verify "$DMG" >/dev/null
-(cd "$DIST" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
+(cd "$PACKAGE_DIR" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
 
-echo "$DMG"
+NAME="$(basename "$DMG")"
+rm -f "$DIST/$NAME" "$DIST/$NAME.sha256"
+mv "$DMG" "$DMG.sha256" "$DIST/"
+
+echo "$DIST/$NAME"

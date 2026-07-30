@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2 - 2026-07-29
+
+- The published DMG is now signed with a Developer ID and notarized by Apple, so macOS no longer asks you to approve the first launch.
+- Updating from an earlier version requires granting Accessibility, and Input Monitoring where it applies, one more time: the signature changed, so macOS treats this build as a different app and its old permissions do not carry over.
+- Release builds now happen outside the working copy. iCloud Drive syncs Desktop and Documents, and its file provider was stamping attributes on the app bundle mid-build that made code signing fail at random.
+
 ## 1.2.1 - 2026-07-28
 
 - Redrew the app icon: two translucent glass pointers overlapping on a light macOS tile, replacing the pair that faced away from each other.

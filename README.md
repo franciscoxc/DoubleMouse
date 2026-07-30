@@ -10,7 +10,7 @@ Ever wondered how to be faster on your Mac? What if you had two physical mice, e
 
 ## Download
 
-- [Download DoubleMouse 1.2.1 for macOS from GitHub](https://github.com/franciscoxc/DoubleMouse/releases/download/v1.2.1/DoubleMouse-1.2.1.dmg)
+- [Download DoubleMouse 1.2.2 for macOS from GitHub](https://github.com/franciscoxc/DoubleMouse/releases/download/v1.2.2/DoubleMouse-1.2.2.dmg)
 - [Download mirror and project page](https://apps.franxc.com/doublemouse/)
 
 The app requires two pointing devices: two physical mice, or the built-in MacBook trackpad plus one external mouse. The downloadable build supports Apple Silicon and Intel Macs running macOS 13 or later.
@@ -22,7 +22,7 @@ The app requires two pointing devices: two physical mice, or the built-in MacBoo
 3. If the blue pointer does not react, also enable DoubleMouse under System Settings > Privacy & Security > Input Monitoring.
 4. Use `Set Blue Pointer From Next Movement` from the menu bar when you need to assign a different device.
 
-The published DMG is ad-hoc signed but not notarized. macOS may require you to approve the first launch under System Settings > Privacy & Security.
+The published DMG is signed with a Developer ID and notarized by Apple, so it opens without a Gatekeeper prompt. You still have to grant Accessibility, and on some Macs Input Monitoring, because that is what the app needs to do its job.
 
 ## Features
 
@@ -48,7 +48,6 @@ The implementation uses public AppKit, IOKit, Accessibility, and CoreGraphics AP
 - macOS still has one global mouse-button state, so two simultaneous drag operations are not supported.
 - Some games, remote desktops, canvases, or custom controls may reject synthetic pointer events.
 - The blue device is remembered by USB/Bluetooth port, so moving a mouse to a different port clears the selection.
-- The public DMG is not notarized until a Developer ID certificate is available.
 
 ## Run From Source
 
@@ -67,7 +66,7 @@ When running from Terminal, macOS assigns the relevant privacy permissions to Te
 ## Build The DMG
 
 ```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer scripts/package-release.sh 1.1.1
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer scripts/package-release.sh 1.2.2
 ```
 
 The script uses only native macOS tools and writes the DMG plus SHA-256 checksum to `dist/`. Without arguments it signs ad hoc, which needs no certificate but leaves the first launch behind a Gatekeeper warning.
