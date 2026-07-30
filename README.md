@@ -70,7 +70,26 @@ When running from Terminal, macOS assigns the relevant privacy permissions to Te
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer scripts/package-release.sh 1.1.1
 ```
 
-The script uses only native macOS tools and writes the DMG plus SHA-256 checksum to `dist/`.
+The script uses only native macOS tools and writes the DMG plus SHA-256 checksum to `dist/`. Without arguments it signs ad hoc, which needs no certificate but leaves the first launch behind a Gatekeeper warning.
+
+## Notarize The DMG
+
+Notarization removes that warning. It needs a Developer ID Application certificate, which is not the same as the Apple Development certificate Xcode creates for local builds, and a stored notarytool credential profile:
+
+```sh
+xcrun notarytool store-credentials doublemouse --apple-id <apple-id> --team-id <team-id>
+```
+
+That command prompts for an app-specific password, generated at appleid.apple.com, and keeps it in the login keychain. Then build with both variables set:
+
+```sh
+CODESIGN_IDENTITY="Developer ID Application: <name> (<team-id>)" \
+NOTARY_PROFILE=doublemouse \
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+scripts/package-release.sh <version>
+```
+
+The script then signs with the hardened runtime, submits the disk image, waits for the result, staples the ticket, and verifies the image the way Gatekeeper does. The checksum is written after stapling, since stapling rewrites the disk image.
 
 ## Contributing
 

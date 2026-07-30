@@ -56,6 +56,28 @@ codesign --verify --deep --strict "$MOUNT/DoubleMouse.app"
 hdiutil detach "$MOUNT" >/dev/null
 MOUNTED=0
 hdiutil convert "$RW_DMG" -format UDZO -ov -o "$DMG" >/dev/null
+
+# Notarization needs a real Developer ID; an ad-hoc signature cannot be notarized.
+if [[ "$SIGNING_IDENTITY" != "-" ]]; then
+    codesign --force --timestamp --sign "$SIGNING_IDENTITY" "$DMG"
+fi
+
+if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+    if [[ "$SIGNING_IDENTITY" == "-" ]]; then
+        echo "NOTARY_PROFILE is set but the build is ad-hoc signed; set CODESIGN_IDENTITY too." >&2
+        exit 1
+    fi
+    # notarytool can exit 0 on a rejected submission, so check the reported status.
+    SUBMIT_LOG="$PACKAGE_DIR/notarize.txt"
+    xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait | tee "$SUBMIT_LOG"
+    grep -q "status: Accepted" "$SUBMIT_LOG"
+    xcrun stapler staple "$DMG"
+    xcrun stapler validate "$DMG"
+    # The check Gatekeeper actually runs on a downloaded disk image.
+    spctl -a -t open --context context:primary-signature -v "$DMG"
+fi
+
+# After stapling, because stapling rewrites the disk image.
 hdiutil verify "$DMG" >/dev/null
 (cd "$DIST" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
 
