@@ -46,6 +46,7 @@ The implementation uses public AppKit, IOKit, Accessibility, and CoreGraphics AP
 ## Limitations
 
 - macOS still has one global mouse-button state, so two simultaneous drag operations are not supported.
+- The blue pointer does not trigger hover: buttons do not highlight under it, tooltips do not appear, and submenus do not open. macOS keeps a single cursor position, so putting the real cursor on the blue pointer and bringing it back on every movement would leave the real one jittering constantly. Clicking, scrolling, and dragging are unaffected.
 - Some games, remote desktops, canvases, or custom controls may reject synthetic pointer events.
 - The blue device is remembered by USB/Bluetooth port, so moving a mouse to a different port clears the selection.
 
