@@ -11,7 +11,7 @@ Ever wondered how to be faster on your Mac? What if you had two physical mice, e
 ## Download
 
 - [Download DoubleMouse 1.2.2 for macOS from GitHub](https://github.com/franciscoxc/DoubleMouse/releases/download/v1.2.2/DoubleMouse-1.2.2.dmg)
-- [Download mirror and project page](https://apps.franxc.com/doublemouse/)
+- [Project page](https://franxc.com/doublemouse/)
 
 The app requires two pointing devices: two physical mice, or the built-in MacBook trackpad plus one external mouse. The downloadable build supports Apple Silicon and Intel Macs running macOS 13 or later.
 
