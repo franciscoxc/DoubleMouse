@@ -10,7 +10,8 @@ import AppKit
 func scaledDelta(_ delta: CGPoint, sensitivity: Double, acceleration: Bool) -> CGPoint {
     var gain = sensitivity
     if acceleration {
-        gain *= 1 + min(hypot(delta.x, delta.y), 40) / 40
+        // Double, not CGFloat: Swift 6.1 (Xcode 16, the CI runner) found the division ambiguous.
+        gain *= 1 + Double(min(hypot(delta.x, delta.y), 40)) / 40
     }
     return CGPoint(x: delta.x * gain, y: delta.y * gain)
 }
