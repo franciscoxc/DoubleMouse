@@ -1,19 +1,18 @@
 import AppKit
 import IOKit.hid
 
-enum MouseButton {
-    case left
-    case right
-}
-
 protocol HIDMouseMonitorDelegate: AnyObject {
     func mouseMonitor(_ monitor: HIDMouseMonitor, didMoveSecondaryBy delta: CGPoint)
     func mouseMonitor(_ monitor: HIDMouseMonitor, didScrollSecondaryBy delta: CGPoint)
-    func mouseMonitor(_ monitor: HIDMouseMonitor, didChangeSecondaryButton button: MouseButton, isPressed: Bool)
+    func mouseMonitor(_ monitor: HIDMouseMonitor, didChangeSecondaryButton button: CGMouseButton, isPressed: Bool)
     func mouseMonitorDevicesChanged(_ monitor: HIDMouseMonitor)
 }
 
 private let secondaryDeviceDefaultsKey = "secondaryDeviceKey"
+
+// Common modes, not the default one: the menu and every alert run the main run loop in a mode of
+// their own, and scheduled in the default mode alone the blue pointer froze while one was open.
+private let runLoopMode = CFRunLoopMode.commonModes.rawValue
 
 final class HIDMouseMonitor {
     weak var delegate: HIDMouseMonitorDelegate?
@@ -22,7 +21,11 @@ final class HIDMouseMonitor {
     private var devices: [UInt64: HIDMouseDevice] = [:]
     private var secondaryDeviceID: UInt64?
     private var seizedSecondaryDeviceID: UInt64?
-    private var awaitingSecondaryAssignment = false
+
+    // The last device to click and the last to move, any device, so the person can pick the blue
+    // one by using it.
+    private var lastPress: (device: UInt64, time: TimeInterval)?
+    private var lastMove: (device: UInt64, time: TimeInterval)?
 
     // HID reports arrive one element at a time (X, then Y, then buttons). Accumulate a
     // whole report before telling the delegate, so movement is one diagonal step and one
@@ -49,8 +52,9 @@ final class HIDMouseMonitor {
         seizedSecondaryDeviceID == secondaryDeviceID && secondaryDeviceID != nil
     }
 
-    var assignmentPrompt: String? {
-        awaitingSecondaryAssignment ? "Move the blue pointer mouse now" : nil
+    /// Whether a blue mouse was ever chosen, even one that is not plugged in right now.
+    var hasSavedChoice: Bool {
+        UserDefaults.standard.string(forKey: secondaryDeviceDefaultsKey) != nil
     }
 
     init(delegate: HIDMouseMonitorDelegate?) {
@@ -81,17 +85,17 @@ final class HIDMouseMonitor {
         let context = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
         IOHIDManagerRegisterDeviceMatchingCallback(manager, deviceAddedCallback, context)
         IOHIDManagerRegisterDeviceRemovalCallback(manager, deviceRemovedCallback, context)
-        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), runLoopMode)
         IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
     }
 
     func stop() {
         for device in devices.values {
-            IOHIDDeviceUnscheduleFromRunLoop(device.reference, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+            IOHIDDeviceUnscheduleFromRunLoop(device.reference, CFRunLoopGetMain(), runLoopMode)
             IOHIDDeviceClose(device.reference, IOOptionBits(kIOHIDOptionsTypeNone))
         }
         seizedSecondaryDeviceID = nil
-        IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), runLoopMode)
         IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
     }
 
@@ -106,9 +110,55 @@ final class HIDMouseMonitor {
         delegate?.mouseMonitorDevicesChanged(self)
     }
 
-    func assignSecondaryDeviceFromNextMovement() {
-        awaitingSecondaryAssignment = true
-        delegate?.mouseMonitorDevicesChanged(self)
+    /// The device the person used since `start`: the one that clicked or, failing that, the one
+    /// that moved. A trackpad tap may never reach HID as a button press, but the movement that
+    /// brought the pointer there does.
+    func deviceUsed(since start: TimeInterval) -> UInt64? {
+        if let lastPress, lastPress.time >= start, devices[lastPress.device] != nil {
+            return lastPress.device
+        }
+        if let lastMove, lastMove.time >= start, devices[lastMove.device] != nil {
+            return lastMove.device
+        }
+        return nil
+    }
+
+    /// Takes the chosen device away from macOS, so it moves only the blue pointer, or hands it
+    /// back. Safe to call again: a device that could not be seized before is tried once more.
+    func captureSecondaryDevice() {
+        // Never the last pointing device: with nothing left to move the regular pointer, the
+        // person could not even reach the menu to undo it.
+        let wanted = devices.count >= 2 ? secondaryDeviceID : nil
+        guard seizedSecondaryDeviceID != wanted else {
+            return
+        }
+
+        if let seizedSecondaryDeviceID, let oldDevice = devices[seizedSecondaryDeviceID]?.reference {
+            IOHIDDeviceClose(oldDevice, IOOptionBits(kIOHIDOptionsTypeNone))
+            IOHIDDeviceOpen(oldDevice, IOOptionBits(kIOHIDOptionsTypeNone))
+        }
+        seizedSecondaryDeviceID = nil
+
+        guard let wanted, let device = devices[wanted]?.reference else {
+            return
+        }
+
+        IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone))
+        if IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeSeizeDevice)) == kIOReturnSuccess {
+            seizedSecondaryDeviceID = wanted
+        } else {
+            IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
+        }
+    }
+
+    /// Input Monitoring: the system prompt the first time, System Settings after that, because
+    /// once the question has been answered only Settings can change the answer.
+    static func requestInputMonitoring() {
+        if IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeUnknown {
+            _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+        } else {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
+        }
     }
 
     fileprivate func deviceAdded(_ device: IOHIDDevice) {
@@ -123,14 +173,13 @@ final class HIDMouseMonitor {
 
         let context = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
         IOHIDDeviceRegisterInputValueCallback(device, inputValueCallback, context)
-        IOHIDDeviceScheduleWithRunLoop(device, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDDeviceScheduleWithRunLoop(device, CFRunLoopGetMain(), runLoopMode)
         IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
 
-        // The stored key is always the last explicit choice, so it outranks the guess below
-        // no matter what order devices show up in.
+        // Only the saved choice, never a guess. The guess took whichever device macOS happened to
+        // list second, which could just as well be the main mouse; with no choice saved, the app
+        // asks instead.
         if key == UserDefaults.standard.string(forKey: secondaryDeviceDefaultsKey) {
-            secondaryDeviceID = id
-        } else if secondaryDeviceID == nil && devices.count >= 2 {
             secondaryDeviceID = id
         }
 
@@ -140,7 +189,7 @@ final class HIDMouseMonitor {
 
     fileprivate func deviceRemoved(_ device: IOHIDDevice) {
         let id = deviceID(for: device)
-        IOHIDDeviceUnscheduleFromRunLoop(device, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDDeviceUnscheduleFromRunLoop(device, CFRunLoopGetMain(), runLoopMode)
         IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone))
         devices.removeValue(forKey: id)
 
@@ -164,16 +213,15 @@ final class HIDMouseMonitor {
         let usage = IOHIDElementGetUsage(element)
         let intValue = IOHIDValueGetIntegerValue(value)
 
-        if awaitingSecondaryAssignment,
-           usagePage == kHIDPage_GenericDesktop,
-           usage == kHIDUsage_GD_X || usage == kHIDUsage_GD_Y,
-           intValue != 0 {
-            awaitingSecondaryAssignment = false
-            setSecondaryDevice(id: deviceID)
-            return
+        if usagePage == kHIDPage_GenericDesktop, usage == kHIDUsage_GD_X || usage == kHIDUsage_GD_Y, intValue != 0 {
+            lastMove = (deviceID, ProcessInfo.processInfo.systemUptime)
+        } else if usagePage == kHIDPage_Button, intValue != 0 {
+            lastPress = (deviceID, ProcessInfo.processInfo.systemUptime)
         }
 
-        guard deviceID == secondaryDeviceID else {
+        // Only while seized: a blue mouse that macOS still owns also moves the regular pointer,
+        // and each of its clicks would land twice, once under each pointer.
+        guard deviceID == seizedSecondaryDeviceID else {
             return
         }
 
@@ -186,10 +234,11 @@ final class HIDMouseMonitor {
             scroll(CGPoint(x: 0, y: intValue))
         case (Int(kHIDPage_Consumer), 0x238): // AC Pan, the horizontal wheel / tilt.
             scroll(CGPoint(x: intValue, y: 0))
-        case (Int(kHIDPage_Button), 1):
-            button(.left, isPressed: intValue != 0)
-        case (Int(kHIDPage_Button), 2):
-            button(.right, isPressed: intValue != 0)
+        case (Int(kHIDPage_Button), 1...32):
+            // HID numbers buttons from 1 and Quartz from 0: left, right, middle, then the side ones.
+            if let button = CGMouseButton(rawValue: UInt32(usage - 1)) {
+                self.button(button, isPressed: intValue != 0)
+            }
         default:
             break
         }
@@ -224,34 +273,10 @@ final class HIDMouseMonitor {
         delegate?.mouseMonitor(self, didScrollSecondaryBy: delta)
     }
 
-    private func button(_ button: MouseButton, isPressed: Bool) {
+    private func button(_ button: CGMouseButton, isPressed: Bool) {
         // Press and release must land at the position the user actually pointed at.
         flushPendingMovement()
         delegate?.mouseMonitor(self, didChangeSecondaryButton: button, isPressed: isPressed)
-    }
-
-    private func captureSecondaryDevice() {
-        guard seizedSecondaryDeviceID != secondaryDeviceID else {
-            return
-        }
-
-        if let seizedSecondaryDeviceID, let oldDevice = devices[seizedSecondaryDeviceID]?.reference {
-            IOHIDDeviceClose(oldDevice, IOOptionBits(kIOHIDOptionsTypeNone))
-            IOHIDDeviceOpen(oldDevice, IOOptionBits(kIOHIDOptionsTypeNone))
-            self.seizedSecondaryDeviceID = nil
-        }
-
-        guard let secondaryDeviceID,
-              let device = devices[secondaryDeviceID]?.reference else {
-            return
-        }
-
-        IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone))
-        if IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeSeizeDevice)) == kIOReturnSuccess {
-            seizedSecondaryDeviceID = secondaryDeviceID
-        } else {
-            IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
-        }
     }
 
     // The IOService registry ID is unique per connected device and, unlike an object

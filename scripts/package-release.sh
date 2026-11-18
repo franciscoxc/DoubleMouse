@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-VERSION="${1:-1.1.0}"
+# Required: a default version quietly shipped a DMG named after an old release.
+VERSION="${1:?usage: scripts/package-release.sh <version>}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Build outside the repository. This checkout can live under Desktop or
 # Documents, which iCloud Drive syncs, and its file provider stamps
@@ -65,6 +66,9 @@ for attempt in 1 2 3; do
     sleep 2
 done
 codesign --verify --deep --strict "$APP"
+# On the signed release binary itself: it checks that the updater demands the team that really
+# signed this build, which only a signed bundle can tell.
+"$APP/Contents/MacOS/DoubleMouse" --selftest
 
 rm -f "$DMG" "$DMG.sha256"
 hdiutil create -size 32m -fs HFS+ -volname DoubleMouse "$RW_DMG" >/dev/null

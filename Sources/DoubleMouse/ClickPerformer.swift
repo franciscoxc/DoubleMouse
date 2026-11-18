@@ -1,8 +1,8 @@
 import AppKit
 import ApplicationServices
 
-/// Roles where an Accessibility press is equivalent to a real click. Anything else — text
-/// fields, tables, web areas, canvases — needs a real event, because AXPress does not place
+/// Roles where an Accessibility press is equivalent to a real click. Anything else (text
+/// fields, tables, web areas, canvases) needs a real event, because AXPress does not place
 /// a caret, select a row, or start a selection.
 private let pressableRoles: Set<String> = [
     "AXButton",
@@ -14,8 +14,25 @@ private let pressableRoles: Set<String> = [
     "AXDisclosureTriangle"
 ]
 
+/// The count a press gets, numbered the way the HID system numbers real clicks: one more than
+/// the press before if it came within the double-click interval and on about the same spot.
+func nextClickCount(after previous: (point: CGPoint, time: TimeInterval, count: Int64)?, at point: CGPoint, time: TimeInterval, interval: TimeInterval) -> Int64 {
+    guard let previous,
+          time - previous.time <= interval,
+          hypot(point.x - previous.point.x, point.y - previous.point.y) <= 5 else {
+        return 1
+    }
+    return previous.count + 1
+}
+
 final class ClickPerformer {
     private let source = CGEventSource(stateID: .privateState)
+
+    // AppKit reads double and triple clicks from the count on the event, not from timing, and a
+    // posted event carries whatever count it was given: without this, a double-click from the
+    // blue pointer arrived as two single clicks and opened nothing.
+    private var lastPress: (button: CGMouseButton, point: CGPoint, time: TimeInterval, count: Int64)?
+    private var dragCount: Int64 = 1
 
     init() {
         source?.localEventsSuppressionInterval = 0
@@ -24,30 +41,29 @@ final class ClickPerformer {
     /// macOS keeps one global mouse-button state, so a blue click has to be emitted at the
     /// blue pointer and the system cursor put back where the user left it. The Accessibility
     /// path avoids that round trip entirely when the target is a plain control.
-    func performClick(at point: CGPoint, returningTo returnPoint: CGPoint? = nil) {
-        if performAccessibilityPress(at: point) {
+    func performClick(_ button: CGMouseButton, at point: CGPoint, returningTo returnPoint: CGPoint? = nil) {
+        let count = pressCount(button, at: point)
+        // Not with a modifier held: AXPress has nowhere to carry it, so a Command-click went
+        // through as a plain press.
+        if button == .left, modifierFlags.isEmpty, performAccessibilityPress(at: point) {
             return
         }
-        postMouseEvent(.leftMouseDown, button: .left, at: point)
-        postMouseEvent(.leftMouseUp, button: .left, at: point, returningTo: returnPoint)
-    }
-
-    func performRightClick(at point: CGPoint, returningTo returnPoint: CGPoint? = nil) {
-        // No Accessibility equivalent: AXPress cannot raise a context menu.
-        postMouseEvent(.rightMouseDown, button: .right, at: point)
-        postMouseEvent(.rightMouseUp, button: .right, at: point, returningTo: returnPoint)
+        let types = eventTypes(for: button)
+        postMouseEvent(types.down, button: button, at: point, count: count)
+        postMouseEvent(types.up, button: button, at: point, count: count, returningTo: returnPoint)
     }
 
     func beginDrag(at point: CGPoint, returningTo returnPoint: CGPoint) {
-        postMouseEvent(.leftMouseDown, button: .left, at: point, returningTo: returnPoint)
+        dragCount = pressCount(.left, at: point)
+        postMouseEvent(.leftMouseDown, button: .left, at: point, count: dragCount, returningTo: returnPoint)
     }
 
     func drag(to point: CGPoint, returningTo returnPoint: CGPoint) {
-        postMouseEvent(.leftMouseDragged, button: .left, at: point, returningTo: returnPoint)
+        postMouseEvent(.leftMouseDragged, button: .left, at: point, count: dragCount, returningTo: returnPoint)
     }
 
     func endDrag(at point: CGPoint, returningTo returnPoint: CGPoint? = nil) {
-        postMouseEvent(.leftMouseUp, button: .left, at: point, returningTo: returnPoint)
+        postMouseEvent(.leftMouseUp, button: .left, at: point, count: dragCount, returningTo: returnPoint)
     }
 
     func scroll(at point: CGPoint, delta: CGPoint) {
@@ -65,6 +81,7 @@ final class ClickPerformer {
         }
 
         event.location = quartzPoint(fromAppKitPoint: point)
+        event.flags = modifierFlags
         event.post(tap: .cghidEventTap)
         moveSystemCursor(to: returnPoint)
     }
@@ -72,6 +89,31 @@ final class ClickPerformer {
     func moveSystemCursor(to point: CGPoint) {
         CGWarpMouseCursorPosition(quartzPoint(fromAppKitPoint: point))
         CGAssociateMouseAndMouseCursorPosition(boolean_t(1))
+    }
+
+    // The keyboard's modifiers at this moment. A private event source keeps no keyboard state
+    // of its own, so without them a Shift-click from the blue pointer arrived as a plain click.
+    private var modifierFlags: CGEventFlags {
+        CGEventSource.flagsState(.combinedSessionState).intersection([.maskShift, .maskControl, .maskAlternate, .maskCommand])
+    }
+
+    private func pressCount(_ button: CGMouseButton, at point: CGPoint) -> Int64 {
+        let now = ProcessInfo.processInfo.systemUptime
+        let previous = lastPress.flatMap { $0.button == button ? ($0.point, $0.time, $0.count) : nil }
+        let count = nextClickCount(after: previous, at: point, time: now, interval: NSEvent.doubleClickInterval)
+        lastPress = (button, point, now, count)
+        return count
+    }
+
+    private func eventTypes(for button: CGMouseButton) -> (down: CGEventType, up: CGEventType) {
+        switch button {
+        case .left:
+            return (.leftMouseDown, .leftMouseUp)
+        case .right:
+            return (.rightMouseDown, .rightMouseUp)
+        default:
+            return (.otherMouseDown, .otherMouseUp)
+        }
     }
 
     private func performAccessibilityPress(at point: CGPoint) -> Bool {
@@ -96,13 +138,17 @@ final class ClickPerformer {
         return AXUIElementPerformAction(element, kAXPressAction as CFString) == .success
     }
 
-    private func postMouseEvent(_ type: CGEventType, button: CGMouseButton, at point: CGPoint, returningTo returnPoint: CGPoint? = nil) {
-        CGEvent(
+    private func postMouseEvent(_ type: CGEventType, button: CGMouseButton, at point: CGPoint, count: Int64, returningTo returnPoint: CGPoint? = nil) {
+        if let event = CGEvent(
             mouseEventSource: source,
             mouseType: type,
             mouseCursorPosition: quartzPoint(fromAppKitPoint: point),
             mouseButton: button
-        )?.post(tap: .cghidEventTap)
+        ) {
+            event.setIntegerValueField(.mouseEventClickState, value: count)
+            event.flags = modifierFlags
+            event.post(tap: .cghidEventTap)
+        }
 
         if let returnPoint {
             moveSystemCursor(to: returnPoint)

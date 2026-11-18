@@ -18,10 +18,11 @@
     <string>DoubleMouse</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <!-- scripts/package-release.sh writes the real version into both keys. -->
     <key>CFBundleShortVersionString</key>
-    <string>1.1.0</string>
+    <string>0</string>
     <key>CFBundleVersion</key>
-    <string>110</string>
+    <string>0</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
