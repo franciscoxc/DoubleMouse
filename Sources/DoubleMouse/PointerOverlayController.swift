@@ -15,6 +15,21 @@ func scaledDelta(_ delta: CGPoint, sensitivity: Double, acceleration: Bool) -> C
     return CGPoint(x: delta.x * gain, y: delta.y * gain)
 }
 
+/// The point itself if a display shows it, otherwise the nearest point one does. Clamping to the
+/// box around every screen let the pointer wander into the corner an L-shaped arrangement leaves
+/// empty, where it was drawn on no display and clicked on nothing.
+func pointOnScreens(_ point: CGPoint, screens: [CGRect]) -> CGPoint {
+    if screens.isEmpty || screens.contains(where: { $0.contains(point) }) {
+        return point
+    }
+    // One point in from the far edges: a frame does not contain its own maxX and maxY, so a
+    // pointer parked exactly there would belong to no screen.
+    let nearest = screens.map { frame in
+        CGPoint(x: min(max(point.x, frame.minX), frame.maxX - 1), y: min(max(point.y, frame.minY), frame.maxY - 1))
+    }
+    return nearest.min { hypot($0.x - point.x, $0.y - point.y) < hypot($1.x - point.x, $1.y - point.y) } ?? point
+}
+
 final class PointerOverlayController {
     /// One overlay per display. A single window sized to the union of every screen gets moved
     /// onto one display by macOS when "Displays have separate Spaces" is enabled, leaving the
@@ -119,14 +134,7 @@ final class PointerOverlayController {
     }
 
     private func clampedPoint(_ point: CGPoint) -> CGPoint {
-        let frame = NSScreen.screens.reduce(CGRect.null) { $0.union($1.frame) }
-        guard !frame.isNull, !frame.isEmpty else {
-            return point
-        }
-        return CGPoint(
-            x: min(max(point.x, frame.minX), frame.maxX),
-            y: min(max(point.y, frame.minY), frame.maxY)
-        )
+        pointOnScreens(point, screens: overlays.map(\.frame))
     }
 }
 
