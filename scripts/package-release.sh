@@ -35,7 +35,12 @@ BINARY="$BIN_DIR/DoubleMouse"
 [[ -x "$BINARY" ]]
 ARCHS="$(lipo -archs "$BINARY")"
 [[ " $ARCHS " == *" arm64 "* && " $ARCHS " == *" x86_64 "* ]]
-cp -X "$BINARY" "$APP/Contents/MacOS/DoubleMouse"
+# ponytail-keep: stamped with the real SDK. SwiftPM writes the deployment target (13.0) as the
+# SDK version too, and macOS then draws the menu and dialogs the old way, without Liquid Glass.
+# 1.2.2 shipped with sdk 26.5; the toolchain that built 1.3.0 started writing 13.0 instead.
+MINOS="$(vtool -show-build-version "$BINARY" | awk '$1 == "minos" { print $2; exit }')"
+vtool -set-build-version macos "$MINOS" "$(xcrun --sdk macosx --show-sdk-version)" -replace \
+    -output "$APP/Contents/MacOS/DoubleMouse" "$BINARY"
 cp -X "$ROOT/Packaging/Info.plist" "$APP/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "${VERSION//./}" "$APP/Contents/Info.plist"
