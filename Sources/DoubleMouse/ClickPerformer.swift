@@ -99,12 +99,13 @@ final class ClickPerformer {
     }
 
     /// Where the system cursor belongs: where its own mouse left it.
-    // ponytail-keep: not simply the current position. Seen while testing 1.3.0: during a blue
-    // drag or scroll the system arrow travelled to the blue pointer. Every blue event takes the
-    // cursor there for a moment, and a drag or a scroll is a stream of them; read between two, a
-    // cursor still sitting there became the place to return to. A position that is exactly where
-    // our last event just put it is our doing, not the person's. The cause is inferred from the
-    // symptom, not measured.
+    // ponytail-keep: not simply the current position. Reading it back before every event, a blue
+    // drag or scroll took the system arrow to the blue pointer and left it there: every blue
+    // event puts the cursor on the blue pointer for a moment, a drag or a scroll is a stream of
+    // them, and read between two, a cursor still sitting there became the place to return to. A
+    // position that is exactly where our last event just put it is our doing, not the person's.
+    // With this, on a Mac mini with a Logitech mouse and a Magic Trackpad (2026-11-18), the arrow
+    // stays in its place; what is left is a brief flicker as it goes and comes back.
     private func cursorHome() -> CGPoint {
         let now = NSEvent.mouseLocation
         if let lastPosted, ProcessInfo.processInfo.systemUptime - lastPosted.time < 0.3,

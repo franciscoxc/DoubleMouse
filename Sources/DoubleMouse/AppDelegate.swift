@@ -56,8 +56,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else if hidMonitor.secondaryDeviceName != nil && !hidMonitor.isSecondaryDeviceSeized {
             menu.addItem(note("macOS won't hand this mouse over to DoubleMouse"))
             menu.addItem(action("Open Input Monitoring Settings…", #selector(openInputMonitoring)))
-        } else if hidMonitor.swapCandidate != nil {
-            menu.addItem(action("Swap Pointers", #selector(swapPointers)))
         } else if hidMonitor.isSecondaryDeviceSeized {
             menu.addItem(action("Pause Blue Pointer", #selector(togglePause)))
         }
@@ -164,7 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let alert = NSAlert()
         alert.messageText = "Choose the Blue Pointer Mouse"
-        alert.informativeText = "Click \"Use This Mouse\" with the mouse or trackpad that should move the blue pointer. The other one keeps the regular pointer."
+        alert.informativeText = "Click \"Use This Mouse\" with the mouse that should move the blue pointer. The other mouse or trackpad keeps the regular pointer."
         alert.addButton(withTitle: "Use This Mouse")
         alert.addButton(withTitle: "Cancel")
         // Only a click says which mouse it was. Return would pick whichever one moved last.
@@ -175,13 +173,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         guard let id = hidMonitor.deviceUsed(since: shownAt) else {
-            // Not one HID report arrived during the whole dialog: macOS is withholding them.
-            let blocked = NSAlert()
-            blocked.messageText = "DoubleMouse Can't See Your Mice"
-            blocked.informativeText = "Turn on DoubleMouse in System Settings, under Privacy & Security > Input Monitoring, then choose the blue pointer mouse again."
-            blocked.addButton(withTitle: "Open System Settings")
-            blocked.addButton(withTitle: "Later")
-            if blocked.runModal() == .alertFirstButtonReturn {
+            // No HID report arrived during the dialog. Either the click came from a trackpad,
+            // which sends none (a Magic Trackpad never did), or macOS is withholding them.
+            let unseen = NSAlert()
+            unseen.messageText = "DoubleMouse Didn't See a Mouse Click"
+            unseen.informativeText = "A trackpad can't move the blue pointer, so if you clicked with one, choose again and click with the mouse. If you did click with a mouse, turn on DoubleMouse in System Settings, under Privacy & Security > Input Monitoring."
+            unseen.addButton(withTitle: "OK")
+            unseen.addButton(withTitle: "Open Input Monitoring Settings")
+            if unseen.runModal() == .alertSecondButtonReturn {
                 HIDMouseMonitor.requestInputMonitoring()
             }
             return
@@ -194,23 +193,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         HIDMouseMonitor.requestInputMonitoring()
     }
 
-    /// The blue mouse takes the regular pointer, hover and all, and the other mouse turns blue.
-    /// Each pointer stays where it was; only who owns which changes.
-    @objc private func swapPointers() {
-        guard let other = hidMonitor.swapCandidate else {
-            return
-        }
-        releaseBlueButton()
-        let regular = NSEvent.mouseLocation
-        let blue = overlay.secondaryPointerPosition
-        hidMonitor.setSecondaryDevice(id: other)
-        overlay.moveSecondary(to: regular)
-        clickPerformer.moveSystemCursor(to: blue)
-        overlay.pulseSecondary()
-    }
-
     /// Pausing hands the blue mouse back to macOS, so it moves the regular pointer like any mouse,
-    /// hover included. It is what is left when the other device cannot turn blue for a swap.
+    /// hover included: the one thing the blue pointer cannot have.
     @objc private func togglePause() {
         if hidMonitor.isPaused {
             overlay.moveSecondary(to: NSEvent.mouseLocation)
