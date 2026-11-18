@@ -80,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(openAtLogin)
 
         if !AXIsProcessTrusted() {
-            menu.addItem(action("Grant Accessibility Permission…", #selector(requestAccessibilityPermission)))
+            menu.addItem(action("Grant Accessibility Permission…", #selector(showAccessibilityAlert)))
         }
 
         menu.addItem(.separator())
@@ -225,11 +225,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         didShowAccessibilityWarning = true
+        showAccessibilityAlert()
+    }
+
+    @objc private func showAccessibilityAlert() {
         NSApp.activate(ignoringOtherApps: true)
 
         let alert = NSAlert()
         alert.messageText = "DoubleMouse Needs Accessibility Permission"
-        alert.informativeText = "It is what lets the blue pointer click, scroll, and drag. Turn on DoubleMouse in System Settings, under Privacy & Security > Accessibility."
+        // ponytail-keep: the second half is the case that bit. macOS keeps an entry tied to the
+        // signature of the build that created it, and turning its switch on again does not move it
+        // to the new one: after updating from the ad-hoc 1.2.1, the switch showed on while TCC
+        // still checked 1.2.1's cdhash, and every blue click was dropped. Removing the entry is
+        // what clears it.
+        alert.informativeText = "It is what lets the blue pointer click, scroll, and drag. Turn on DoubleMouse in System Settings, under Privacy & Security > Accessibility.\n\nIf DoubleMouse is already there and turned on, the entry belongs to an older version: select it, remove it with the minus button, and open DoubleMouse again."
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Later")
 
