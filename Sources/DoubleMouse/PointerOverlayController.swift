@@ -75,6 +75,18 @@ final class PointerOverlayController {
         }
     }
 
+    func hide() {
+        isVisible = false
+        for overlay in overlays {
+            overlay.window.orderOut(nil)
+        }
+    }
+
+    func moveSecondary(to point: CGPoint) {
+        secondaryPointerPosition = clampedPoint(point)
+        syncViewPositions()
+    }
+
     func moveSecondaryBy(_ delta: CGPoint) {
         let scaled = scaledDelta(delta, sensitivity: sensitivity, acceleration: acceleration)
         secondaryPointerPosition = clampedPoint(

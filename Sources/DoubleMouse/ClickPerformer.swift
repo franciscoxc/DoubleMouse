@@ -34,6 +34,12 @@ final class ClickPerformer {
     private var lastPress: (button: CGMouseButton, point: CGPoint, time: TimeInterval, count: Int64)?
     private var dragCount: Int64 = 1
 
+    // Where the system cursor belongs, where our last event sent it, and a late check that it
+    // came back. See cursorHome().
+    private var home = CGPoint.zero
+    private var lastPosted: (point: CGPoint, time: TimeInterval)?
+    private var settle: DispatchWorkItem?
+
     init() {
         source?.localEventsSuppressionInterval = 0
     }
@@ -41,7 +47,7 @@ final class ClickPerformer {
     /// macOS keeps one global mouse-button state, so a blue click has to be emitted at the
     /// blue pointer and the system cursor put back where the user left it. The Accessibility
     /// path avoids that round trip entirely when the target is a plain control.
-    func performClick(_ button: CGMouseButton, at point: CGPoint, returningTo returnPoint: CGPoint? = nil) {
+    func performClick(_ button: CGMouseButton, at point: CGPoint) {
         let count = pressCount(button, at: point)
         // Not with a modifier held: AXPress has nowhere to carry it, so a Command-click went
         // through as a plain press.
@@ -49,25 +55,26 @@ final class ClickPerformer {
             return
         }
         let types = eventTypes(for: button)
+        let home = cursorHome()
         postMouseEvent(types.down, button: button, at: point, count: count)
-        postMouseEvent(types.up, button: button, at: point, count: count, returningTo: returnPoint)
+        postMouseEvent(types.up, button: button, at: point, count: count, returningTo: home)
     }
 
-    func beginDrag(at point: CGPoint, returningTo returnPoint: CGPoint) {
+    func beginDrag(at point: CGPoint) {
         dragCount = pressCount(.left, at: point)
-        postMouseEvent(.leftMouseDown, button: .left, at: point, count: dragCount, returningTo: returnPoint)
+        postMouseEvent(.leftMouseDown, button: .left, at: point, count: dragCount, returningTo: cursorHome())
     }
 
-    func drag(to point: CGPoint, returningTo returnPoint: CGPoint) {
-        postMouseEvent(.leftMouseDragged, button: .left, at: point, count: dragCount, returningTo: returnPoint)
+    func drag(to point: CGPoint) {
+        postMouseEvent(.leftMouseDragged, button: .left, at: point, count: dragCount, returningTo: cursorHome())
     }
 
-    func endDrag(at point: CGPoint, returningTo returnPoint: CGPoint? = nil) {
-        postMouseEvent(.leftMouseUp, button: .left, at: point, count: dragCount, returningTo: returnPoint)
+    func endDrag(at point: CGPoint) {
+        postMouseEvent(.leftMouseUp, button: .left, at: point, count: dragCount, returningTo: cursorHome())
     }
 
     func scroll(at point: CGPoint, delta: CGPoint) {
-        let returnPoint = NSEvent.mouseLocation
+        let home = cursorHome()
         guard delta != .zero,
               let event = CGEvent(
                 scrollWheelEvent2Source: source,
@@ -83,12 +90,50 @@ final class ClickPerformer {
         event.location = quartzPoint(fromAppKitPoint: point)
         event.flags = modifierFlags
         event.post(tap: .cghidEventTap)
-        moveSystemCursor(to: returnPoint)
+        sendCursorHome(to: home, afterEventAt: point)
     }
 
     func moveSystemCursor(to point: CGPoint) {
         CGWarpMouseCursorPosition(quartzPoint(fromAppKitPoint: point))
         CGAssociateMouseAndMouseCursorPosition(boolean_t(1))
+    }
+
+    /// Where the system cursor belongs: where its own mouse left it.
+    // ponytail-keep: not simply the current position. Seen while testing 1.3.0: during a blue
+    // drag or scroll the system arrow travelled to the blue pointer. Every blue event takes the
+    // cursor there for a moment, and a drag or a scroll is a stream of them; read between two, a
+    // cursor still sitting there became the place to return to. A position that is exactly where
+    // our last event just put it is our doing, not the person's. The cause is inferred from the
+    // symptom, not measured.
+    private func cursorHome() -> CGPoint {
+        let now = NSEvent.mouseLocation
+        if let lastPosted, ProcessInfo.processInfo.systemUptime - lastPosted.time < 0.3,
+           hypot(now.x - lastPosted.point.x, now.y - lastPosted.point.y) < 2 {
+            return home
+        }
+        home = now
+        return now
+    }
+
+    /// Puts the cursor back after an event, and looks again a moment after the last one.
+    // The second look is for an event that lands after its own warp: the two reach the window
+    // server by different roads, and if the warp wins nothing else brings the cursor back.
+    private func sendCursorHome(to home: CGPoint, afterEventAt point: CGPoint) {
+        lastPosted = (point, ProcessInfo.processInfo.systemUptime)
+        moveSystemCursor(to: home)
+
+        settle?.cancel()
+        let check = DispatchWorkItem { [weak self] in
+            guard let self, let lastPosted = self.lastPosted else {
+                return
+            }
+            let now = NSEvent.mouseLocation
+            if hypot(now.x - lastPosted.point.x, now.y - lastPosted.point.y) < 2 {
+                self.moveSystemCursor(to: self.home)
+            }
+        }
+        settle = check
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: check)
     }
 
     // The keyboard's modifiers at this moment. A private event source keeps no keyboard state
@@ -151,7 +196,7 @@ final class ClickPerformer {
         }
 
         if let returnPoint {
-            moveSystemCursor(to: returnPoint)
+            sendCursorHome(to: returnPoint, afterEventAt: point)
         }
     }
 

@@ -35,9 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        if blueDragStarted {
-            clickPerformer.endDrag(at: overlay.secondaryPointerPosition, returningTo: NSEvent.mouseLocation)
-        }
+        releaseBlueButton()
         hidMonitor.stop()
     }
 
@@ -46,32 +44,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         hidMonitor.captureSecondaryDevice()
         menu.removeAllItems()
 
-        if let name = hidMonitor.secondaryDeviceName {
-            menu.addItem(note("Blue Pointer: \(name)"))
-        } else {
-            menu.addItem(note(hidMonitor.hasSavedChoice ? "Blue Pointer: mouse not connected" : "Blue Pointer: not chosen yet"))
-        }
+        let state = hidMonitor.secondaryDeviceName ?? (hidMonitor.hasSavedChoice ? "mouse not connected" : "not chosen yet")
+        let devices = NSMenuItem(title: "Blue Pointer: \(state)", action: nil, keyEquivalent: "")
+        devices.submenu = deviceSubmenu()
+        menu.addItem(devices)
+
         if hidMonitor.allDevices.count < 2 {
             menu.addItem(note("Connect a second mouse or trackpad to use it"))
+        } else if hidMonitor.isPaused {
+            menu.addItem(action("Resume Blue Pointer", #selector(togglePause)))
         } else if hidMonitor.secondaryDeviceName != nil && !hidMonitor.isSecondaryDeviceSeized {
             menu.addItem(note("macOS won't hand this mouse over to DoubleMouse"))
             menu.addItem(action("Open Input Monitoring Settings…", #selector(openInputMonitoring)))
+        } else if hidMonitor.swapCandidate != nil {
+            menu.addItem(action("Swap Pointers", #selector(swapPointers)))
+        } else if hidMonitor.isSecondaryDeviceSeized {
+            menu.addItem(action("Pause Blue Pointer", #selector(togglePause)))
         }
-
-        let devices = NSMenuItem(title: "Blue Pointer Mouse", action: nil, keyEquivalent: "")
-        devices.submenu = deviceSubmenu()
-        menu.addItem(devices)
-        menu.addItem(action("Choose Blue Pointer Mouse…", #selector(chooseBlueMouse)))
-
-        menu.addItem(.separator())
 
         let speed = NSMenuItem(title: "Pointer Speed", action: nil, keyEquivalent: "")
         speed.submenu = speedSubmenu()
         menu.addItem(speed)
-
-        let acceleration = action("Pointer Acceleration", #selector(toggleAcceleration))
-        acceleration.state = overlay.acceleration ? .on : .off
-        menu.addItem(acceleration)
 
         menu.addItem(.separator())
 
@@ -83,9 +76,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(action("Grant Accessibility Permission…", #selector(showAccessibilityAlert)))
         }
 
+        let updates = action("Check for Updates…", #selector(checkForUpdates))
+        if #available(macOS 14.4, *) {
+            updates.subtitle = Updater.current == "0" ? "Development build" : "Version \(Updater.current)"
+        }
+        menu.addItem(updates)
+
         menu.addItem(.separator())
-        menu.addItem(note(Updater.current == "0" ? "DoubleMouse (development build)" : "DoubleMouse \(Updater.current)"))
-        menu.addItem(action("Check for Updates…", #selector(checkForUpdates)))
         menu.addItem(NSMenuItem(title: "Quit DoubleMouse", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
@@ -115,6 +112,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.state = device.id == hidMonitor.selectedSecondaryDeviceID ? .on : .off
             submenu.addItem(item)
         }
+        submenu.addItem(.separator())
+        submenu.addItem(action("Choose by Clicking…", #selector(chooseBlueMouse)))
         return submenu
     }
 
@@ -126,6 +125,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.state = abs(overlay.sensitivity - value) < 0.001 ? .on : .off
             submenu.addItem(item)
         }
+        submenu.addItem(.separator())
+        let acceleration = action("Acceleration", #selector(toggleAcceleration))
+        acceleration.state = overlay.acceleration ? .on : .off
+        submenu.addItem(acceleration)
         return submenu
     }
 
@@ -189,6 +192,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openInputMonitoring() {
         HIDMouseMonitor.requestInputMonitoring()
+    }
+
+    /// The blue mouse takes the regular pointer, hover and all, and the other mouse turns blue.
+    /// Each pointer stays where it was; only who owns which changes.
+    @objc private func swapPointers() {
+        guard let other = hidMonitor.swapCandidate else {
+            return
+        }
+        releaseBlueButton()
+        let regular = NSEvent.mouseLocation
+        let blue = overlay.secondaryPointerPosition
+        hidMonitor.setSecondaryDevice(id: other)
+        overlay.moveSecondary(to: regular)
+        clickPerformer.moveSystemCursor(to: blue)
+        overlay.pulseSecondary()
+    }
+
+    /// Pausing hands the blue mouse back to macOS, so it moves the regular pointer like any mouse,
+    /// hover included. It is what is left when the other device cannot turn blue for a swap.
+    @objc private func togglePause() {
+        if hidMonitor.isPaused {
+            overlay.moveSecondary(to: NSEvent.mouseLocation)
+            hidMonitor.isPaused = false
+            overlay.show()
+            overlay.pulseSecondary()
+        } else {
+            releaseBlueButton()
+            // The regular pointer picks up where the blue one was, so the hand on the blue mouse
+            // keeps pointing at the same thing.
+            clickPerformer.moveSystemCursor(to: overlay.secondaryPointerPosition)
+            hidMonitor.isPaused = true
+            overlay.hide()
+        }
+        statusItem.button?.appearsDisabled = hidMonitor.isPaused
+    }
+
+    /// Lets go of a blue button that is still down, before the blue mouse changes hands.
+    private func releaseBlueButton() {
+        holdTimer?.cancel()
+        holdTimer = nil
+        if blueDragStarted {
+            clickPerformer.endDrag(at: overlay.secondaryPointerPosition)
+        }
+        blueButtonIsDown = false
+        blueDragStarted = false
     }
 
     @objc private func toggleOpenAtLogin() {
@@ -261,7 +309,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         blueDragStarted = true
-        clickPerformer.beginDrag(at: bluePressPosition, returningTo: NSEvent.mouseLocation)
+        clickPerformer.beginDrag(at: bluePressPosition)
     }
 }
 
@@ -278,7 +326,7 @@ extension AppDelegate: HIDMouseMonitorDelegate {
             startBluePress()
         }
         if blueDragStarted {
-            clickPerformer.drag(to: point, returningTo: NSEvent.mouseLocation)
+            clickPerformer.drag(to: point)
         }
     }
 
@@ -291,7 +339,7 @@ extension AppDelegate: HIDMouseMonitorDelegate {
             // Right, middle, and side buttons click on release. Only the left one holds and drags:
             // macOS has a single button state, and the left button already keeps it busy.
             if !isPressed {
-                clickPerformer.performClick(button, at: overlay.secondaryPointerPosition, returningTo: NSEvent.mouseLocation)
+                clickPerformer.performClick(button, at: overlay.secondaryPointerPosition)
                 overlay.pulseSecondary()
             }
             return
@@ -318,9 +366,9 @@ extension AppDelegate: HIDMouseMonitorDelegate {
         holdTimer?.cancel()
         holdTimer = nil
         if blueDragStarted {
-            clickPerformer.endDrag(at: overlay.secondaryPointerPosition, returningTo: NSEvent.mouseLocation)
+            clickPerformer.endDrag(at: overlay.secondaryPointerPosition)
         } else {
-            clickPerformer.performClick(.left, at: overlay.secondaryPointerPosition, returningTo: NSEvent.mouseLocation)
+            clickPerformer.performClick(.left, at: overlay.secondaryPointerPosition)
         }
         blueDragStarted = false
         overlay.pulseSecondary()

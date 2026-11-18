@@ -26,6 +26,17 @@ final class HIDMouseMonitor {
     // one by using it.
     private var lastPress: (device: UInt64, time: TimeInterval)?
     private var lastMove: (device: UInt64, time: TimeInterval)?
+    // The last device used that macOS still owns. Only one that has sent plain mouse reports can
+    // take over as blue, and a trackpad that talks multitouch never shows up here.
+    private var lastOtherDevice: UInt64?
+
+    /// Paused, the blue mouse goes back to macOS and moves the regular pointer like any mouse.
+    var isPaused = false {
+        didSet {
+            captureSecondaryDevice()
+            delegate?.mouseMonitorDevicesChanged(self)
+        }
+    }
 
     // HID reports arrive one element at a time (X, then Y, then buttons). Accumulate a
     // whole report before telling the delegate, so movement is one diagonal step and one
@@ -50,6 +61,14 @@ final class HIDMouseMonitor {
 
     var isSecondaryDeviceSeized: Bool {
         seizedSecondaryDeviceID == secondaryDeviceID && secondaryDeviceID != nil
+    }
+
+    /// The device that turns blue in a swap, if one can.
+    var swapCandidate: UInt64? {
+        guard isSecondaryDeviceSeized, let lastOtherDevice, lastOtherDevice != secondaryDeviceID, devices[lastOtherDevice] != nil else {
+            return nil
+        }
+        return lastOtherDevice
     }
 
     /// Whether a blue mouse was ever chosen, even one that is not plugged in right now.
@@ -128,7 +147,7 @@ final class HIDMouseMonitor {
     func captureSecondaryDevice() {
         // Never the last pointing device: with nothing left to move the regular pointer, the
         // person could not even reach the menu to undo it.
-        let wanted = devices.count >= 2 ? secondaryDeviceID : nil
+        let wanted = !isPaused && devices.count >= 2 ? secondaryDeviceID : nil
         guard seizedSecondaryDeviceID != wanted else {
             return
         }
@@ -213,10 +232,15 @@ final class HIDMouseMonitor {
         let usage = IOHIDElementGetUsage(element)
         let intValue = IOHIDValueGetIntegerValue(value)
 
-        if usagePage == kHIDPage_GenericDesktop, usage == kHIDUsage_GD_X || usage == kHIDUsage_GD_Y, intValue != 0 {
+        let moved = usagePage == kHIDPage_GenericDesktop && (usage == kHIDUsage_GD_X || usage == kHIDUsage_GD_Y) && intValue != 0
+        let pressed = usagePage == kHIDPage_Button && intValue != 0
+        if moved {
             lastMove = (deviceID, ProcessInfo.processInfo.systemUptime)
-        } else if usagePage == kHIDPage_Button, intValue != 0 {
+        } else if pressed {
             lastPress = (deviceID, ProcessInfo.processInfo.systemUptime)
+        }
+        if moved || pressed, deviceID != seizedSecondaryDeviceID {
+            lastOtherDevice = deviceID
         }
 
         // Only while seized: a blue mouse that macOS still owns also moves the regular pointer,
@@ -302,7 +326,8 @@ final class HIDMouseMonitor {
         let base = [manufacturer, product].compactMap { $0 }.joined(separator: " ")
         let label = base.isEmpty ? "Pointing Device" : base
 
-        if let transport {
+        // "USB Optical Mouse (USB)" said it twice.
+        if let transport, !label.localizedCaseInsensitiveContains(transport) {
             return "\(label) (\(transport))"
         }
         return label
