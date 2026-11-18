@@ -104,7 +104,7 @@ final class ClickPerformer {
     // event puts the cursor on the blue pointer for a moment, a drag or a scroll is a stream of
     // them, and read between two, a cursor still sitting there became the place to return to. A
     // position that is exactly where our last event just put it is our doing, not the person's.
-    // With this, on a Mac mini with a Logitech mouse and a Magic Trackpad (2026-11-18), the arrow
+    // With this, on a Mac mini with a Logitech mouse and a Magic Trackpad 1 (2026-11-18), the arrow
     // stays in its place; what is left is a brief flicker as it goes and comes back.
     private func cursorHome() -> CGPoint {
         let now = NSEvent.mouseLocation

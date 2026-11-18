@@ -173,11 +173,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         guard let id = hidMonitor.deviceUsed(since: shownAt) else {
-            // No HID report arrived during the dialog. Either the click came from a trackpad,
-            // which sends none (a Magic Trackpad never did), or macOS is withholding them.
+            // No HID report arrived during the dialog. Either the click came from a trackpad that
+            // only reports touches (the original Magic Trackpad sent none), or macOS is withholding them.
             let unseen = NSAlert()
             unseen.messageText = "DoubleMouse Didn't See a Mouse Click"
-            unseen.informativeText = "A trackpad can't move the blue pointer, so if you clicked with one, choose again and click with the mouse. If you did click with a mouse, turn on DoubleMouse in System Settings, under Privacy & Security > Input Monitoring."
+            unseen.informativeText = "Some trackpads, like the original Magic Trackpad, only report touches and can't move the blue pointer. If you clicked with one, choose again and click with a mouse. If you did click with a mouse, turn on DoubleMouse in System Settings, under Privacy & Security > Input Monitoring."
             unseen.addButton(withTitle: "OK")
             unseen.addButton(withTitle: "Open Input Monitoring Settings")
             if unseen.runModal() == .alertSecondButtonReturn {

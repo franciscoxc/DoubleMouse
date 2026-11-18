@@ -58,7 +58,7 @@ The implementation uses public AppKit, IOKit, Accessibility, and CoreGraphics AP
 - Only the blue pointer's left button holds and drags. Its other buttons click when released.
 - The blue pointer does not trigger hover: buttons do not highlight under it, tooltips do not appear, and submenus do not open. macOS keeps a single cursor position, so putting the real cursor on the blue pointer and bringing it back on every movement would leave the real one jittering constantly. Clicking, scrolling, and dragging are unaffected. When the blue mouse needs hover, `Pause Blue Pointer` hands it the regular pointer until you resume.
 - While the blue pointer clicks, drags, or scrolls, the regular arrow flickers at the blue pointer for an instant. macOS has one cursor, and each blue action borrows it.
-- A trackpad works as the regular pointer next to a blue mouse, but it cannot be the blue pointer: checked with a Magic Trackpad, it does not send the plain movement reports a mouse does.
+- A trackpad works as the regular pointer next to a blue mouse. The original Magic Trackpad cannot be the blue pointer, because it does not send the plain movement reports a mouse does. Built-in trackpads and the newer Magic Trackpads have not been tried as the blue pointer.
 - Some games, remote desktops, canvases, or custom controls may reject synthetic pointer events.
 - The blue device is remembered by USB/Bluetooth port, so moving a mouse to a different port clears the selection.
 
